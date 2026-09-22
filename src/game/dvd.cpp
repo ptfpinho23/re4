@@ -336,8 +336,8 @@ struct DvdSndStrWork {
 };
 extern "C" DvdSndStrWork Snd_str_work[4];   // game/snd_ram.cpp SND_STR_WORK Snd_str_work[SND_STR_MAX], seen through the view struct above
 
-#define DVD_BUFF ((void*) 0x80350000)
-#define DVD_BUFF2 ((void*) 0x80360000)
+#define DVD_BUFF ((void*) GC_ADDR(0x80350000))
+#define DVD_BUFF2 ((void*) GC_ADDR(0x80360000))
 
 // status field of cDvdQueue::flag
 enum {
@@ -1475,7 +1475,12 @@ int cDvd::ReadCheck(int id, int* mram_size, int* aram_size, void** addr)
 {
     DvdReadInfo info;
 
+#ifndef RE4_PORT
     if (readCheckMain(id, &info) == 1) {
+#else
+    int r = readCheckMain(id, &info);  // the original returns it by falling off the end (r3)
+    if (r == 1) {
+#endif
         if (mram_size) {
             *mram_size = info.mramSize;
         }
@@ -1486,6 +1491,9 @@ int cDvd::ReadCheck(int id, int* mram_size, int* aram_size, void** addr)
             *addr = (void*) info.addr[0][0];
         }
     }
+#ifdef RE4_PORT
+    return r;
+#endif
 }
 
 // Poll variant used by read.cpp that also fills a DvdReadInfo.
@@ -1992,9 +2000,9 @@ int cDvd::GetDiscNo()
 void RomFontSetting()
 {
     if (OSGetFontEncode() == 1) {
-        pG->FontData = (void*) 0x816D3100;
+        pG->FontData = (void*) GC_ADDR(0x816D3100);
     } else {
-        pG->FontData = (void*) 0x817D3EE0;
+        pG->FontData = (void*) GC_ADDR(0x817D3EE0);
     }
     OSInitFont((OSFontHeader*) pG->FontData);
 }
@@ -2078,4 +2086,4 @@ void cDvd::DiscReadInfo()
 }
 
 // The original's .rodata is 8-aligned (0x1D98: 4 bytes of end padding after the last pool).
-asm(".section .rodata; .balign 8");
+ASM_ANCHOR(".section .rodata; .balign 8");

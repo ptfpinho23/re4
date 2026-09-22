@@ -1,6 +1,8 @@
 #ifndef TYPES_H
 #define TYPES_H
 
+#include "port.h"
+
 typedef signed char s8;
 typedef signed short s16;
 typedef signed long s32;

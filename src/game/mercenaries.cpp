@@ -149,7 +149,7 @@ int MercSysInitRoom(MercInit* pMInit)
         // COMPILER-DIFF: #13 (int shape): the original never allocates the single-use REG_EQUIV zero;
         // reload re-materialises `li r11, 0` right before the store (after the pG load), where ours
         // local-allocs the constant to r0 and hoists it above the load.
-        register int z asm("r11"); // COMPILER-DIFF: #13
+        register int z REG_PIN("r11"); // COMPILER-DIFF: #13
         z = 0;
         wk->stage = z;
     }
@@ -821,6 +821,9 @@ int MercSysSetAddTime(int time)
     wk->addTime += time;
     wk->flags |= MF_ADD_TIME;
     // no return: the original falls off the end (r3 still holds `sec`)
+#ifdef RE4_PORT
+    return 1;
+#endif
 }
 
 // Bonus time pick-up: extends the bonus timer (starting the display when it was 0).

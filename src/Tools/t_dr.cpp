@@ -717,4 +717,4 @@ static inline void ToolDr()
     }
 }
 
-asm(".section .data; .balign 8");
+ASM_ANCHOR(".section .data; .balign 8");

@@ -98,7 +98,7 @@ extern "C" void r105_checkCesspit2();
 static void r105_initCesspit();
 
 // The original's .data is 8-aligned (the table is its only content).
-asm(".section .data; .balign 8");
+ASM_ANCHOR(".section .data; .balign 8");
 static void (*r105_markTbl[4])() = {
     r105_markInit,
     r105_markMain,

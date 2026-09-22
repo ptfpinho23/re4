@@ -34,7 +34,7 @@
 // the block must come from a compiled object, or make_rel refuses the link.
 #define DB_LIGHT_STR2(x) #x
 #define DB_LIGHT_STR(x) DB_LIGHT_STR2(x)
-asm(".comm common_" DB_LIGHT_STR(REL_MODULE) ",52,4");
+ASM_ANCHOR(".comm common_" DB_LIGHT_STR(REL_MODULE) ",52,4");
 
 // Light editor (D:/Bio4/Prog/db_light.cpp): cLightTool (the editor), cDbLit (the .lit cuts being edited,
 // one Debug_alloc'd cLightEnv per cut) and cLitPathTool (the light path table). The same object is in
@@ -305,7 +305,11 @@ void DrawTile(int x, int y, int w, int h, GXColor* color);
 // by invisible reference, so the caller copies it into a keep-0 stack temp (calls.c) that every call of
 // the statement sequence reuses and passes its address in r7 -- the editColor shape. The real DrawTile
 // takes a pointer (mangled P7GXColor); an inlined by-value wrapper allocates one keep-1 temp per call.
+#ifndef RE4_PORT
 void DrawTileV(int x, int y, int w, int h, GXColor color) asm("DrawTile__FiiiiP7GXColor");
+#else
+#define DrawTileV(x, y, w, h, c) DrawTile(x, y, w, h, &(c))
+#endif
 int LitLoadWork(cDbLit* lit, int no);
 int LitSaveWork(cDbLit* lit, int no);
 int editColor(int x, int y, GXColor* col);
@@ -686,7 +690,7 @@ static void edit_cutsel()
         env = pTool->Lit.getCut(pTool->table_y + i);
         eprintf(0x20, 0x54 + i * 14, pTool->table_y + i == pTool->cutNo ? 0 : 0x14, pTool->PageNo, "%03d", pTool->table_y + i);
         {
-            register int t asm("r0"); // COMPILER-DIFF: 4 (unmasked narrow store, see `line`)
+            register int t REG_PIN("r0"); // COMPILER-DIFF: 4 (unmasked narrow store, see `line`)
             t = i + 6;
             asm("" : "+r"(t)); // combine would fold the hard-reg copy into the addi
             line = t;
@@ -3074,7 +3078,7 @@ void draw_light_graph(cLight* l)
     {
         // COMPILER-DIFF: 2 + #17: the original's colour lives in r5 (a copy preference ours never gets)
         // and is zero-extended for the int argument before the nested call; the pin gives both.
-        register int col5 asm("r5");
+        register int col5 REG_PIN("r5");
         col5 = 0;
         if (v > 0.04f) {
             col5 = 6;
@@ -5924,4 +5928,4 @@ int cLitPathTool::createPath(cLightPathHeader* dst)
 }
 
 // the next object's .data is 8-aligned: the split object carries the 4-byte pad
-asm(".section .data; .balign 8");
+ASM_ANCHOR(".section .data; .balign 8");

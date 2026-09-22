@@ -277,6 +277,7 @@ void systemStartInit()
     VISetPostRetraceCallback(postVSyncCallback);
     Dvd.Init();
     CardInit();
+#ifndef RE4_PORT  // GQR2..5 = u8/u16/s8/s16, scale 0: the port's PSQ_* macros assume exactly this
     asm("li 3, 4\n"
         "oris 3, 3, 4\n"
         "mtspr 914, 3\n"
@@ -292,6 +293,7 @@ void systemStartInit()
         :
         :
         : "r3");
+#endif
     SystemMemInit();
     if (pG->IsDevConsole == 1) {
         CardDbgCacheSet();

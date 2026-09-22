@@ -69,7 +69,7 @@ static R327Work* r327_work;
 
 
 // The original object's .data is 8-aligned (0x170 in the REL after r320's 0x16c).
-asm(".section .data; .balign 8");
+ASM_ANCHOR(".section .data; .balign 8");
 static R327EmTbl r327_firstTbl[11] = {
     {0, 0x79}, {1, 0x7A}, {2, 0x7B}, {4, 0x7D}, {5, 0x81}, {6, 0x82}, {7, 0x85}, {8, 0x86}, {9, 0x8E}, {10, 0x93}, {30, 0x9C},
 };

@@ -2426,7 +2426,7 @@ static void EmSubDead1(f32* p)
 }
 
 // EmCatchPLSet for the partner `sub`, in the enemy's frame.
-static void EmCatchSubSet(cEm* em, cEm* sub, f32 ang, u32 type, f32 x, f32 y, f32 z, void (*ft)(cSubChar*))
+DOL_STATIC void EmCatchSubSet(cEm* em, cEm* sub, f32 ang, u32 type, f32 x, f32 y, f32 z, void (*ft)(cSubChar*))
 {
     Mtx m;
     Vec p;

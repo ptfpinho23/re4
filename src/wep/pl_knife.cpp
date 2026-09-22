@@ -541,4 +541,4 @@ void setWepTrans(cPlayer* pl, int onoff)
 }
 
 // The module's .data section is 8-aligned in the original (the routine tables end at 0x3C).
-asm(".section .data\n\t.balign 8\n\t.text");
+ASM_ANCHOR(".section .data\n\t.balign 8\n\t.text");

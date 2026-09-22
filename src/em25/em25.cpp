@@ -37,7 +37,7 @@
 #include "em.h"
 #include "em_mod.h"
 
-asm(".comm common_em25,52,4");
+ASM_ANCHOR(".comm common_em25,52,4");
 
 
 

@@ -54,7 +54,7 @@ struct R11dWork {
 
 static R11dWork* r11d_work;
 // The original's .data is 8-aligned (r105 has the same).
-asm(".section .data; .balign 8");
+ASM_ANCHOR(".section .data; .balign 8");
 static u8 r11d_hideCnt = 0;
 
 

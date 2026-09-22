@@ -165,7 +165,11 @@ void cEmShield::beginEvent(u32 flag)
 // goes through a do-while(0) + void-returning alias: the loop notes give `&parts0->worldPos` a 5th
 // weighted ref (global-alloc priority above `w`: r26/r25) and the void result keeps `li r3,8`
 // ahead of the other argument `li`s inside the notes (u32 SndCall issues it last there).
+#ifndef RE4_PORT
 void SndCallV(u16, u16, Vec*, int, int, cUnit*) asm("SndCall__FUsUsP3VeciiP5cUnit");
+#else
+#define SndCallV SndCall
+#endif
 // Weapon hit reaction (see the note above): plays the shield hit SE on the carrier, and by weapon
 // class either counts hits toward knocking off the hit plank (est 0x10/0x61, or 0x63 for parts 5,
 // the plank is scaled to 0 and its hit box disabled), breaks the whole shield on the fourth plank

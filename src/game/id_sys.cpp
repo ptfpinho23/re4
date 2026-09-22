@@ -1512,4 +1512,4 @@ void* g_pIdBuff = 0;
 int IdBuffType;
 
 // The split object's .sdata is 8-aligned (the linker pads 0x80314BB4 -> 0x80314BB8 before it).
-asm(".section .sdata; .balign 8");
+ASM_ANCHOR(".section .sdata; .balign 8");

@@ -484,3 +484,6 @@ void cManager<T>::destroyNow(T* p)
     destroy(p);
     flag = f;
 }
+#ifdef RE4_PORT
+template void cManager<cObj>::destroyNow(cObj*);  // GCC 2.95 instantiated it here for the other units
+#endif

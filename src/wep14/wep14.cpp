@@ -632,4 +632,4 @@ extern "C" void _unresolved()
 }
 
 // The module's .data section is 8-aligned (the original linker's placement; the tables start at 4).
-asm(".section .data\n\t.balign 8\n\t.text");
+ASM_ANCHOR(".section .data\n\t.balign 8\n\t.text");

@@ -1320,7 +1320,7 @@ int HermiteInterpolation(HermitePrm* prm, Vec* out, u16* hist)
             // (gcse's pre_insert_copies shape); a plain copy is coalesced by regmove. The r0 pin plus
             // the codeless use in the error arm keep m live past the compare, so combine cannot fold
             // the copy and regmove's forward scan stops at the branch (COMPILER-DIFF: gcse copy kept).
-            register int m asm("r0") = n - 1;
+            register int m REG_PIN("r0") = n - 1;
             last = m;
             asm("" : : "r"(last));                    // COMPILER-DIFF: last must outrank n for r30
             if (idx > m) {

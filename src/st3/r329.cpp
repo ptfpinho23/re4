@@ -101,7 +101,7 @@ static void R329EventS00()
             // setPos stores them 1 insn apart, so ours ranks y (len 76) above x (len 78) and hands
             // out f29/f28/f27 to z/y/x. The target has x above y (z f29, x f28, y f27); no
             // statement order reproduces that tie, so x is pinned.
-            register f32 px asm("fr28");
+            register f32 px REG_PIN("fr28");
             Vec pos;
 
             px = -1890.0f;

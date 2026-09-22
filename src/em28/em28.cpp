@@ -212,7 +212,7 @@ static u16 em28_flip_tbl[36] = {
     0x0D, 0x0E, 0x12, 0x13, 0x14, 0x15, 0x16, 0x0F, 0x10, 0x11, 0x12, 0x17, 0x18, 0x19, 0x1A, 0x1B,
     0x1C, 0x1D, 0x1E, 0x00,
 };
-asm(".section .data\n\t.balign 8\n\t.text");
+ASM_ANCHOR(".section .data\n\t.balign 8\n\t.text");
 
 // Per-frame update: damage check, clears the per-frame flags, the R0 table (Init / Move / Damage /
 // Die), then collision and the scenario check (checkAir while airborne, flag bit4).

@@ -1078,7 +1078,7 @@ void sceAtGetItem(SceAtWork* w)
     case 8: {
         // COMPILER-DIFF: 13 (global-alloc rotation it/ItemMgr/money): money pinned to the
         // original's r29 settles the other two (it r31, the ItemMgr high r30).
-        register u32 money asm("r29") = pG->peseta;
+        register u32 money REG_PIN("r29") = pG->peseta;
 
         put = ItemMgr.get(it->id, it->num);
         if (it->id == 0x73) {
@@ -1197,7 +1197,7 @@ void sceAtGetItem(SceAtWork* w)
             // COMPILER-DIFF: candidate #12 (r0 pin): cse1 follows the `bne` into the else arm and would
             // canonicalise `res == 2` to sel; canon_reg never replaces a hard register, so the pinned res
             // keeps `cmpwi r0,2` and sel (a pseudo: preferred as class head) keeps `mr; cmpwi sel,1`.
-            register int res asm("r0") = cMes.getWork()->m_sel;
+            register int res REG_PIN("r0") = cMes.getWork()->m_sel;
 
             sel = res;
             if (sel == 1) {
@@ -1437,7 +1437,7 @@ void sceAtGetItem_NoModel(SceAtWork* w)
             // COMPILER-DIFF: candidate #12 (r0 pin): cse1 follows the `bne` into the else arm and would
             // canonicalise `res == 2` to sel; canon_reg never replaces a hard register, so the pinned res
             // keeps `cmpwi r0,2` and sel (a pseudo: preferred as class head) keeps `mr; cmpwi sel,1`.
-            register int res asm("r0") = cMes.getWork()->m_sel;
+            register int res REG_PIN("r0") = cMes.getWork()->m_sel;
 
             sel = res;
             if (sel == 1) {
@@ -2047,7 +2047,7 @@ int sceAtFunc_pos_jump(SceAtWork* w, cModel* pModel)
     // the local-alloc'd dstAngle load in f0); ours allocates the 3-ref 0.0 first (f0). Both values
     // pinned: the angle too, so the y store gets the same call anti-dependent as the z/x stores
     // and the three stores keep the source order.
-    register f32 a asm("fr0");
+    register f32 a REG_PIN("fr0");
     f32 z;
 
     pPL->setPos(&w->jumpPos);

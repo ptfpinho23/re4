@@ -806,4 +806,4 @@ int cEsp08::SetFreeWork(EspGenWork* pSeq, u32* pRand_seed)
 }
 
 // The split object's .sdata is 8-aligned and 0x10 bytes (prm1..prm3 + 4 pad).
-asm(".section .sdata; .balign 8");
+ASM_ANCHOR(".section .sdata; .balign 8");

@@ -222,4 +222,4 @@ int cEsp4e::SetFreeWork(EspGenWork* pSeq, u32* pRand_seed)
     return 1;
 }
 
-asm(".section .sdata; .balign 8");
+ASM_ANCHOR(".section .sdata; .balign 8");

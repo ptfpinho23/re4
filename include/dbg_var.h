@@ -64,6 +64,12 @@ cVarRange<T>::operator int()
 template <class T>
 class cVarLoop : public cVarRange<T> {
 public:
+#ifdef RE4_PORT  // dependent base members: two-phase lookup needs them named
+    using cVarRange<T>::init;
+    using cVarRange<T>::val;
+    using cVarRange<T>::lower;
+    using cVarRange<T>::upper;
+#endif
     cVarLoop(const T& lo, const T& hi, const T& v);
     virtual int limitUpper(int d);
     virtual int limitLower(int d);

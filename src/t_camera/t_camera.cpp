@@ -2690,7 +2690,7 @@ void tcDrawRail()
         if (pTc->editMode == 1 && pTc->editSel == 1 && i == pTc->curKey && pTc->editCursor == 1) {
             v = c->pos[i];
             {
-                register Vec* a3 asm("r3");  // COMPILER-DIFF: candidate #18 (struct-return-like address in r3 before a no-argument call)
+                register Vec* a3 REG_PIN("r3");  // COMPILER-DIFF: candidate #18 (struct-return-like address in r3 before a no-argument call)
                 a3 = &v;
                 asm("" : "=m"(v.y) : "r"(a3));
             }
@@ -2711,7 +2711,7 @@ void tcDrawRail()
         if (pTc->editMode == 1 && pTc->editSel == 1 && i == pTc->curKey && pTc->editCursor == 2) {
             v = c->at[i];
             {
-                register Vec* a3 asm("r3");  // COMPILER-DIFF: candidate #18 (struct-return-like address in r3 before a no-argument call)
+                register Vec* a3 REG_PIN("r3");  // COMPILER-DIFF: candidate #18 (struct-return-like address in r3 before a no-argument call)
                 a3 = &v;
                 asm("" : "=m"(v.y) : "r"(a3));
             }

@@ -47,7 +47,7 @@
 
 // The module's 0x34-byte COMMON block (st_room.h): uninitialised template statics of the original
 // object, appended to .bss by snmakerel.
-asm(".comm common_pl0e,52,4");
+ASM_ANCHOR(".comm common_pl0e,52,4");
 
 
 #line 1 "D:/Bio4/Prog/pl0e.cpp"

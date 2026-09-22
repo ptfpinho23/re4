@@ -460,7 +460,11 @@ direct:
 // call) whose `&p` argument is a pseudo PRE'd with the other arm's copy: a reference inline
 // around a `(...)`-prototyped memset reproduces both (`p = Vec()` gives a zeroed temporary
 // plus a block copy with our cc1plus).
+#ifndef RE4_PORT
 extern "C" void* memset_v(...) asm("memset");
+#else
+#define memset_v memset
+#endif
 static inline void vecClear(Vec& v) { memset_v(&v, 0, sizeof(Vec)); }
 // Position of route point `no` (zero without RTP).
 void RouteCkGetPoint(int no, Vec* out)

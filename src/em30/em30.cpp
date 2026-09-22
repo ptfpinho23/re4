@@ -145,6 +145,9 @@ int em30DmCk(cEm30* em)
             }
         }
     }
+#ifdef RE4_PORT
+    return 0;  // the original falls off the end
+#endif
 }
 
 Em30Func Em30_R0_move_tbl[4] = {

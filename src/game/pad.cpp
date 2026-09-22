@@ -73,7 +73,7 @@ void PadRead()
     // constant has no dependents in block 0 (priority 1 < the `lis Pad_data@ha` chain), so sched
     // would issue it second; the codeless barrier after it makes every later insn depend on it,
     // where the target issues `li r16,10` before `lis Pad_data@ha`.
-    register int dead asm("r16");                // COMPILER-DIFF: #17
+    register int dead REG_PIN("r16");                // COMPILER-DIFF: #17
 
     dead = 10;
     asm volatile("");                            // COMPILER-DIFF: #13 (sched barrier, no code)
@@ -471,4 +471,4 @@ void Pad_test()
 }
 
 // The split object's .rodata is 8-aligned and 4 bytes longer (padding after the last string).
-asm(".section .rodata; .balign 8");
+ASM_ANCHOR(".section .rodata; .balign 8");

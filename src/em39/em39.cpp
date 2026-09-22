@@ -58,7 +58,7 @@
 
 // The module's 0x34-byte COMMON block (st_room.h): uninitialised template statics of the original
 // object, merged into .bss by the REL link.
-asm(".comm common_em39,52,4");
+ASM_ANCHOR(".comm common_em39,52,4");
 
 
 static void em39_R0_Init(cEm39* em);
@@ -673,13 +673,13 @@ static void em39_R0_Init(cEm39* em)
     // r0/r8/r11/r9/r10 and the subArc load of the routine MotionSetCore its r11, and the post-call
     // init block is issued in pure source order (no store carries a register death). Pinned here,
     // except r0, which the allocator picks by itself.
-    register int z0 asm("r20");
+    register int z0 REG_PIN("r20");
     int r0c;
-    register int r8c asm("r8");
-    register int r9c asm("r9");
-    register int r10c asm("r10");
-    register int r11c asm("r11");
-    register PlArc* arc11 asm("r11");
+    register int r8c REG_PIN("r8");
+    register int r9c REG_PIN("r9");
+    register int r10c REG_PIN("r10");
+    register int r11c REG_PIN("r11");
+    register PlArc* arc11 REG_PIN("r11");
 
     switch (em->type) {
     case 1:
@@ -2577,12 +2577,12 @@ static void em39_R1_JumpUp2(cEm39* em)
         // COMPILER-DIFF: #2 -- the target's `fmuls f12,f0,f12` ties the product to the constant's
         // register (its sum was not a tieable operand); value-carrying pins reproduce the tie and
         // the FPR names around it.
-        register f32 posy asm("fr11");
+        register f32 posy REG_PIN("fr11");
         f32 dy;
-        register f32 k asm("fr12");
-        register f32 t asm("fr12");
+        register f32 k REG_PIN("fr12");
+        register f32 t REG_PIN("fr12");
         f32 k19;
-        register f32 py asm("fr13");
+        register f32 py REG_PIN("fr13");
 
         MotionSetCore(em, MOTION(em), ARC(0x6A), ARC(0x6B), 0xA, 1, 0);
         posy = em->pos.y;
@@ -2657,12 +2657,12 @@ static void em39_R1_JumpUp3(cEm39* em)
             // (`fmuls f12,f13,f12` / `fmuls f12,f0,f12`) and the 0.0 reuses the 1000.0 register;
             // value-carrying pins per arm (the JumpUp2 recipe). Store order x, y, z, x18: the zero's
             // first use sinks last, the dying stores keep source order.
-            register f32 posy asm("fr0");
+            register f32 posy REG_PIN("fr0");
             f32 dy;
-            register f32 k asm("fr12");
-            register f32 t asm("fr12");
+            register f32 k REG_PIN("fr12");
+            register f32 t REG_PIN("fr12");
             f32 k19;
-            register f32 py asm("fr0");
+            register f32 py REG_PIN("fr0");
 
             posy = em->pos.y;
             dy = w->Target_pos.y - posy + 1000.0f;
@@ -2678,12 +2678,12 @@ static void em39_R1_JumpUp3(cEm39* em)
             em->r_no_3 = 0;
         } else {
             MotionSetCore(em, MOTION(em), ARC(0x68), ARC(0x69), 0xA, 1, 0);
-            register f32 posy asm("fr13"); // COMPILER-DIFF: #2 (see the other arm)
+            register f32 posy REG_PIN("fr13"); // COMPILER-DIFF: #2 (see the other arm)
             f32 dy;
-            register f32 k asm("fr12");
-            register f32 t asm("fr12");
+            register f32 k REG_PIN("fr12");
+            register f32 t REG_PIN("fr12");
             f32 k19;
-            register f32 py asm("fr13");
+            register f32 py REG_PIN("fr13");
 
             posy = em->pos.y;
             dy = w->Target_pos.y - posy + 1000.0f;
@@ -4364,7 +4364,7 @@ static void em39_R1_ThrowGR(cEm39* em)
             if (em->pos.y > tpos.y + 2000.0f) {
                 spd.y = 0.0f;
             }
-            asm volatile("" : : "f"(d)); // COMPILER-DIFF: #13 (dying stores issued in source order)
+            ASM_USE_F(d); // COMPILER-DIFF: #13 (dying stores issued in source order)
             PSMTXRotRad(m, 'y', GetXZAngle(&em->pos, &tpos));
             PSMTXMultVecSR(m, &spd, &spd);
             w->pBomb->setGrenadeThrow(&spd, 45, ARC(0x10B), ARC(0x10C), ARC(0x10D), ARC(0x111));
@@ -6541,7 +6541,7 @@ void em39WaistMove(cEm39* em)
 // The original keeps the three constant-pool words (0.9, 0.020000001, 1.0) of em39WaistMove's
 // dead-stripped body; ours drops unreferenced pool entries (mark_constant_pool).
 // COMPILER-DIFF: candidate #10 (unreferenced constant-pool entries kept).
-asm(".section .rodata\n\t.long 0x3f666666, 0x3ca3d70b, 0x3f800000\n\t.text");
+ASM_ANCHOR(".section .rodata\n\t.long 0x3f666666, 0x3ca3d70b, 0x3f800000\n\t.text");
 
 // Laser marker: from the machine gun muzzle (x8B4 == 3) or the bow (x8B4 == 4) to the target.
 void em39MarkerMove(cEm39* em)
@@ -8388,7 +8388,7 @@ int em39GotoCk(cEm39* em)
 // (Locate), damage counters reset, a 30-frame attack wait, Wait.
 void cEm39::set2ndBattle()
 {
-    register Em39Work* w asm("r29"); // COMPILER-DIFF: #13 -- w kept live past its last store (see the asm below)
+    register Em39Work* w REG_PIN("r29"); // COMPILER-DIFF: #13 -- w kept live past its last store (see the asm below)
     Vec p = { 31259.0f, 5250.0f, -14068.0f };
     u32 zero;
 
@@ -8937,4 +8937,4 @@ int cEm39::ckBombCutEnable()
 }
 
 // The split object's .data is 8-aligned (4 pad bytes before the ngcld BSS tag).
-asm(".section .data\n\t.balign 8\n\t.text");
+ASM_ANCHOR(".section .data\n\t.balign 8\n\t.text");

@@ -39,7 +39,7 @@
 
 // The module's 0x34-byte COMMON block (st_room.h): uninitialised template statics of the original
 // object, merged into .bss by the REL link.
-asm(".comm common_em2a,52,4");
+ASM_ANCHOR(".comm common_em2a,52,4");
 
 
 
@@ -181,9 +181,13 @@ static Camera em2a_rescue_cam = { 0 };
 // COMPILER-DIFF: candidate #12 (cse related-value): `cam = &em2a_rescue_cam` after the `&em2a_rescue_cam.param.pos/at`
 // pointers are known is a fresh `lis/addi` pair in the original; our cse rewrites it as `at - 0xB0`.
 // An asm-labelled alias declaration gives cse a distinct SYMBOL_REF and keeps the fresh pair.
+#ifndef RE4_PORT
 extern Camera em2a_rescue_cam_v asm("em2a_rescue_cam");
+#else
+#define em2a_rescue_cam_v em2a_rescue_cam
+#endif
 // .data is padded to 8 bytes before the linker's BSS tag word.
-asm(".section .data\n\t.balign 8\n\t.text");
+ASM_ANCHOR(".section .data\n\t.balign 8\n\t.text");
 
 // Per-frame update: the damage check of the trap kind (em2aDmCkTrap1 / Trap2), clears the per-frame
 // flags and runs the R0 table (Init / Move / Damage / Die / Scenario).

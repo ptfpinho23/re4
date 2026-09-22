@@ -179,7 +179,11 @@ static inline int flagOn(u32 f, u32 bit)
 // COMPILER-DIFF: #13 -- the j loop's `&EvtDebug` is a fresh `lis/addi` in the target (a REG_EQUIV lo_sum pseudo that the
 // original never allocated, re-materialised at its copy); a distinct SYMBOL_REF ("*EvtDebug" string, so cse/gcse do not
 // merge it with the pScr block's lo_sum) gives that with a symbol-based alias base for the loop's loads
+#ifndef RE4_PORT
 extern EventDebug EvtDebug_j asm("EvtDebug");
+#else
+#define EvtDebug_j EvtDebug
+#endif
 #define EVT_CUT_NO_J(buf) ((buf)[0] = EvtDebug_j.pad_0[0x49], (buf)[1] = EvtDebug_j.pad_0[0x4A], (buf)[2] = 0, atoi(buf))
 #define EVT_CUT_NO(buf) ((buf)[0] = EvtDebug.pad_0[0x49], (buf)[1] = EvtDebug.pad_0[0x4A], (buf)[2] = 0, atoi(buf))
 

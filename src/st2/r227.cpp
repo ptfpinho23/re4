@@ -61,7 +61,11 @@ static R227Work* r227_work;
 u32 r227_boxNo[4] = {6, 7, 8, 0};
 
 // The rooms call Event::FlgOnStatus out of line (event.h has it in-class).
+#ifndef RE4_PORT
 void EvtFlgOnStatus(Event* e, u32 no) asm("FlgOnStatus__5EventUl");
+#else
+#define EvtFlgOnStatus(e, no) (e)->FlgOnStatus(no)
+#endif
 
 void r227_openShelf_main(int id, int opened);
 static void r227_openShelf(int id);

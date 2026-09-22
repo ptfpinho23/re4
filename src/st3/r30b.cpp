@@ -77,7 +77,7 @@ static EmControlPoint r30b_sitTbl2b[1] = {{{-7480.0f, -2000.0f, 1400.0f}, 0xE}};
 static Vec r30b_gotoTbl[3] = {{-5600.0f, -2000.0f, -4900.0f}, {-5780.0f, 1000.0f, -14700.0f}, {-10000.0f, 1000.0f, -14700.0f}};
 static Vec r30b_gotoTbl2[1] = {{-5600.0f, -2000.0f, -4900.0f}};
 // The module's .data tail is 8-aligned in the original (0x23C -> 0x240; st3.cpp's linker word follows).
-asm(".section .data\n\t.balign 8\n\t.text");
+ASM_ANCHOR(".section .data\n\t.balign 8\n\t.text");
 
 extern "C" {
 static void r30b_movedShelf(int no);

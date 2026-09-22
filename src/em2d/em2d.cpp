@@ -44,7 +44,7 @@
 
 // The module's 0x34-byte COMMON block (st_room.h): uninitialised template statics of the original
 // object, merged into .bss by the REL link.
-asm(".comm common_em2d,52,4");
+ASM_ANCHOR(".comm common_em2d,52,4");
 
 
 
@@ -2753,11 +2753,11 @@ static void em2d_R1_W_Walk(cEm2d* em)
                 // canonicalises a hard register, so the fr0 pin keeps the first compare on the load; the
                 // DFmode read of fr0 in the second arm keeps it live past the copy, so regmove does not move
                 // its death onto the copy (docs/matching.md #8) and the `fmr` survives.
-                register f32 ny asm("fr0");
-                register f64 nyd asm("fr0");
+                register f32 ny REG_PIN("fr0");
+                register f64 nyd REG_PIN("fr0");
                 ny = w->wallNrm.y;
                 alpha = ny;
-                if (ny > 0.899999976f || ({ asm("" : "=m"(inv[0][0]) : "f"(nyd)); alpha; }) < -0.899999976f) {
+                if (ny > 0.899999976f || ({ ASM_TIE_F(inv[0][0], nyd); alpha; }) < -0.899999976f) {
                     w->atkWait = Rnd() % 30 + 30;
                     EmRoutineSet(em, 1, 0x14, t, t);
                     break;

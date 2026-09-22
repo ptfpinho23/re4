@@ -87,14 +87,25 @@ struct Weight {
     u8 wht[4]; // 0x04  percent
 };
 
+#ifndef RE4_PORT
 #define PTR_INVALID(p) ((s32) (p) >= 0 || (u32) (p) > 0x82FFFFFF)
 #define PTR_INVALID2(p) ((u32) (p) - 0x80000000 > 0x02FFFFFF)
+#else
+#define PTR_INVALID(p) (!GC_PTR_OK(p))
+#define PTR_INVALID2(p) (!GC_PTR_OK(p))
+#endif
 
 // u8 -> f32 through GQR2 straight from memory: the compiler only emits psq_l from a stack slot.
+#ifndef RE4_PORT
 #define PSQ_L_U8(p) ({ f32 f_; asm volatile("psq_l %0,0(%1),1,2" : "=f"(f_) : "b"(p) : "memory"); f_; })
 // Loads straight into the named variable so the asm output shares the variable's (global) register
 // (espgen42/45 too; asm stays in the unit so asmcheck.py counts it).
 #define PSQ_L_U8_TO(dst, p) asm volatile("psq_l %0,0(%1),1,2" : "=f"(dst) : "b"(p) : "memory")
+#else
+// GQR2 is u8 with scale 0 (main.cpp / scheduler.cpp set 0x00040004): a plain u8 -> f32 conversion.
+#define PSQ_L_U8(p) ((f32) *(const u8*) (p))
+#define PSQ_L_U8_TO(dst, p) ((dst) = (f32) *(const u8*) (p))
+#endif
 
 // Bit test as 0 / 1 (matching helper).
 static inline int isBit(u32 f, u32 b)
@@ -855,7 +866,7 @@ int MakeWeightPaletteExt(WeightExt* w0, int n)
             m[2][3] += *s++ * rate;
             cnt++;
         }
-        PSMTXReorder(m, (f32(*)[3]) (0xE0000000 + i * 0x30));
+        PSMTXReorder(m, (f32(*)[3]) (LC_BASE + i * 0x30));
     }
 #undef w
     return cnt;
@@ -907,7 +918,7 @@ int MakeWeightPalette(Weight* w0, int n)
             m[2][3] += *s++ * rate;
             cnt++;
         }
-        PSMTXReorder(m, (f32(*)[3]) (0xE0000000 + i * 0x30));
+        PSMTXReorder(m, (f32(*)[3]) (LC_BASE + i * 0x30));
     }
 #undef w
     return cnt;
@@ -2494,6 +2505,7 @@ static void primBuffDebugDisp(int n)
     GXSetViewport(zero, zero, h, one, (f32) n, one);
 }
 
+#ifndef RE4_PORT
 // Skin `n` vertices (s16 x/y/z + s16 matrix index, 8 bytes) from src into dst (s16 x/y/z, 6 bytes)
 // with the matrix palette in locked cache (0xE0000000, ROMtx 0x30 each). GQR6 holds the fixed point scale.
 void CalcSk1_x(void* dst, void* src, u32 n)
@@ -2572,6 +2584,83 @@ void setupGQR6(u32 v)
 {
     asm volatile("mtspr 918, %0" : : "r"(v));
 }
+
+#else
+// The port's skinning kernels in C. GQR6 encodes the fixed-point scale of the s16/s8 vertex data
+// (6-bit two's complement load / store scale at bits 24 and 8, types at bits 16 and 0); the matrix
+// palette is at LC_BASE (PSMTXReorder writes column-major 3x4 matrices, 0x30 bytes each).
+static f32 gqr6_ld_mul = 1.0f;  // multiply the loaded integer by this
+static f32 gqr6_st_mul = 1.0f;  // multiply the float by this before the integer store
+
+static f32 gqrScale(u32 field)
+{
+    // scale s: the integer is divided by 2^s on load (multiplied on store); s is two's complement.
+    int s = (int) (field & 0x3F);
+    if (s >= 32) {
+        s -= 64;
+    }
+    return (f32) ldexp(1.0, -s);
+}
+
+static inline void skinOne(const f32* m, f32 x, f32 y, f32 z, f32* out)
+{
+    out[0] = m[0] * x + m[3] * y + m[6] * z + m[9];
+    out[1] = m[1] * x + m[4] * y + m[7] * z + m[10];
+    out[2] = m[2] * x + m[5] * y + m[8] * z + m[11];
+}
+
+static inline s16 quantS16(f32 v)
+{
+    v *= gqr6_st_mul;
+    if (v > 32767.0f) return 32767;
+    if (v < -32768.0f) return -32768;
+    return (s16) v;
+}
+
+static inline s8 quantS8(f32 v)
+{
+    v *= gqr6_st_mul;
+    if (v > 127.0f) return 127;
+    if (v < -128.0f) return -128;
+    return (s8) v;
+}
+
+void CalcSk1_x(void* dst, void* src, u32 n)
+{
+    const s16* s = (const s16*) src;
+    s16* d = (s16*) dst;
+    u32 i;
+    for (i = 0; i < n; i++, s += 4, d += 3) {
+        const f32* m = (const f32*) (LC_BASE + s[3] * 0x30);
+        f32 out[3];
+        skinOne(m, s[0] * gqr6_ld_mul, s[1] * gqr6_ld_mul, s[2] * gqr6_ld_mul, out);
+        d[0] = quantS16(out[0]);
+        d[1] = quantS16(out[1]);
+        d[2] = quantS16(out[2]);
+    }
+}
+
+void CalcSk1_x2(void* dst, void* src, u32 n)
+{
+    const s8* s = (const s8*) src;
+    s8* d = (s8*) dst;
+    u32 i;
+    for (i = 0; i < n; i++, s += 4, d += 3) {
+        const f32* m = (const f32*) (LC_BASE + ((const u8*) s)[3] * 0x30);
+        f32 out[3];
+        skinOne(m, s[0] * gqr6_ld_mul, s[1] * gqr6_ld_mul, s[2] * gqr6_ld_mul, out);
+        d[0] = quantS8(out[0]);
+        d[1] = quantS8(out[1]);
+        d[2] = quantS8(out[2]);
+    }
+}
+
+void setupGQR6(u32 v)
+{
+    gqr6_ld_mul = gqrScale(v >> 24);
+    gqr6_st_mul = 1.0f / gqrScale(v >> 8);
+}
+#endif
 
 // Relocate a TPL whose texture headers also carry a CLUT (thermo palette).
 void CalcTplAddrC8(TEXPalette* tpl)

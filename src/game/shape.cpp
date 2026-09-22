@@ -180,8 +180,15 @@ struct ShapeEntry {
 };
 
 // Apply the shape `data` at `rate` to the vertex buffer `dst` (8-byte vertices, s16 xyz).
+#ifndef RE4_PORT
 #define PSQ_L_S16(p) ({ f32 f_; asm volatile("psq_l %0,0(%1),1,5" : "=f"(f_) : "b"(p)); f_; })
 #define PSQ_ST_S16(f, p) asm volatile("psq_st %0,0(%1),1,5" : : "f"(f), "b"(p) : "memory")
+#else
+// GQR5 is s16 with scale 0: plain conversions (the store saturates like psq_st).
+static inline s16 portQuantS16(f32 v) { return v > 32767.0f ? 32767 : v < -32768.0f ? -32768 : (s16) v; }
+#define PSQ_L_S16(p) ((f32) *(const s16*) (p))
+#define PSQ_ST_S16(f, p) (*(s16*) (p) = portQuantS16(f))
+#endif
 
 // Applies shape `data` at frame `rate` to the vertex buffer `dst`: for every channel flagged 4 the
 // Hermite weight (percent / 100, x1.37 with shapeFlags bit3) scales that channel's delta list

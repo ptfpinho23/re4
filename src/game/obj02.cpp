@@ -39,6 +39,11 @@ public:
     void SetSwingRot(f32 amp, f32 period, f32 phase);
 };
 
+#ifdef RE4_PORT
+// r318.cpp reaches the callback setter through this (the matching build binds it by mangled name).
+void cObjScrSetCallBack(cObj* o, void (*func)(cObj*)) { ((cObjScr*) o)->SetCallBack(func); }
+#endif
+
 // New scroll object: no callback.
 cObjScr::cObjScr()
 {

@@ -9,7 +9,7 @@
 #include <dolphin/os.h>
 
 static int usb_fd = -1;
-static void* usb_buf = (void*) 0x81800000;
+static void* usb_buf = (void*) GC_ADDR(0x81800000);
 static int usb_size = 0;
 static int usb_pos = 0;
 

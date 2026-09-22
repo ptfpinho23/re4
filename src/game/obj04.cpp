@@ -192,4 +192,4 @@ void Efm04RotMatrix(cObj* pObj, Mtx pMat)
 }
 
 // The next unit's .sdata starts 8-byte aligned in the original link.
-asm(".section .sdata,\"aw\"\n\t.balign 8\n\t.text");
+ASM_ANCHOR(".section .sdata,\"aw\"\n\t.balign 8\n\t.text");

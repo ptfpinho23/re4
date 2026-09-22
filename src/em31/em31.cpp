@@ -46,7 +46,7 @@
 #include <dolphin/os.h>
 #include "em_mod.h"
 
-asm(".comm common_em31,52,4");
+ASM_ANCHOR(".comm common_em31,52,4");
 
 
 

@@ -506,4 +506,4 @@ void pathGridLock(Vec* grid, Vec* in, Vec* out)
 }
 
 // the next object's .data is 8-aligned
-asm(".section .data; .balign 8");
+ASM_ANCHOR(".section .data; .balign 8");

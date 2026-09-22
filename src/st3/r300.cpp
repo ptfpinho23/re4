@@ -79,7 +79,11 @@ struct R300EspView {
     Vec pos2;   // 0x100
 };
 
+#ifndef RE4_PORT
 extern "C" void* r300_memset(void*, ...) asm("memset");
+#else
+#define r300_memset memset
+#endif
 
 
 // Reference store: the work pointer and the field are reloaded after it.

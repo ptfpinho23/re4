@@ -210,4 +210,4 @@ void LightAreaUpdateSub(cEm* em, int type)
     }
 }
 
-asm(".section .sdata; .balign 8");
+ASM_ANCHOR(".section .sdata; .balign 8");

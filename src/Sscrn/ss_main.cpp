@@ -1071,4 +1071,4 @@ cModInfoMgr ssModInfoMgr;
 
 // The split object's .data is 4 bytes longer than the variables (the next unit's .data starts
 // 8-aligned in the REL), like ss_file.
-asm(".section .data; .balign 8; .section .text");
+ASM_ANCHOR(".section .data; .balign 8; .section .text");

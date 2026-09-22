@@ -37,6 +37,8 @@ typedef int BOOL;
 #define NULL ((void*)0)
 #endif
 
+#include "port.h"
+
 #ifdef __MWERKS__
 #include "libc/stdio.h"
 #include "libc/stdarg.h"
@@ -51,6 +53,8 @@ typedef int BOOL;
 
 #ifdef __MWERKS__
 #include "cmath.h"
+#elif defined(RE4_PORT)
+#include <math.h>
 #else
 #define fabsf fabsf_libm  // math_sub.h defines its own inline fabsf
 #include <math.h>

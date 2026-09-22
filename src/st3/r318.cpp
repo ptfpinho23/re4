@@ -93,7 +93,11 @@ static SceElevatorData r318_elvArrive = {0, 3, {0.0f, 0.0f, 0.0f}, {27850.0f, 82
 static SceElevatorData r318_elvLeave = {1, 3, {0.0f, 0.0f, 0.0f}, {27850.0f, 826.0f, 4380.0f}, {0.0f, -1.48f, 0.0f}, 2, 0, 0, 0, 1, {3085.0f, 0.0f, -100.0f}, {0.0f, 1.35f, 0.0f}, 0x31A};
 
 // cObjScr (game/obj02.cpp) is not in a header: the callback setter of a scripted map object.
+#ifndef RE4_PORT
 void cObjScrSetCallBack(cObj* o, void (*func)(cObj*)) asm("SetCallBack__7cObjScrPFP4cObj_v");
+#else
+void cObjScrSetCallBack(cObj* o, void (*func)(cObj*));  // obj02.cpp defines it for the port
+#endif
 
 // The laser hit: rumble, quake and the death routine.
 static inline void LaserHit();
@@ -250,8 +254,8 @@ static void R318ExecSitEnd()
 void R318LaserCallBackFunc(cObj* obj)
 {
     if ((pG->Room_flg[0] & 0x00020000) && obj->isTrans() == 1) {
-        register cModel* q asm("r28");
-        register Vec* pa asm("r10");
+        register cModel* q REG_PIN("r28");
+        register Vec* pa REG_PIN("r10");
         cModel* p2 = GetPartsAddr(obj->pParts, 2);
         cModel* p4 = GetPartsAddr(obj->pParts, 4);
         int k = 2;
@@ -960,7 +964,7 @@ void R318EventLaserEnd(int no)
 
             laser->be_flag &= ~2;
             if (no != 4) {
-                register cModel* t asm("r28");
+                register cModel* t REG_PIN("r28");
                 cModel* p2 = GetPartsAddr(laser->pParts, 2);
                 t = p2;
                 cModel* p4 = GetPartsAddr(laser->pParts, 4);

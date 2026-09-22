@@ -13,10 +13,12 @@
 #include "main_mem.h"
 
 // Zeroed info (no collision until init).
+#ifndef RE4_PORT  // the port's cAtariInfo has no constructor (atariInfo.h ATARI_INFO_CONSTRUCT)
 cAtariInfo::cAtariInfo()
 {
     memclr_asm(this, sizeof(cAtariInfo));
 }
+#endif
 
 // Full setup: offset x / y / z, size rx (x radius) / rz (z radius) / w (radius3) / hh (half
 // height), the parts it follows (0 = the model), interpolation frames and flags | 0x300 (scenery

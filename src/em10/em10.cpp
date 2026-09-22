@@ -75,7 +75,7 @@
 // `common_<mod>`, unreferenced. REL_MODULE comes from configure.py.
 #define EM10_STR2(x) #x
 #define EM10_STR(x) EM10_STR2(x)
-asm(".comm common_" EM10_STR(REL_MODULE) ",52,4");
+ASM_ANCHOR(".comm common_" EM10_STR(REL_MODULE) ",52,4");
 
 
 // Routine dispatch tables (.data).
@@ -27587,4 +27587,4 @@ void em10SetPoint(cEm10* em)
 
 // The original em10.cpp object has an 8-aligned .data (the split object's sh_addralign); the size is already
 // a multiple of 8, so this only raises the section alignment (the REL places .data at +0x460D0, not +0x460CC).
-asm(".section .data\n\t.balign 8\n\t.text");
+ASM_ANCHOR(".section .data\n\t.balign 8\n\t.text");

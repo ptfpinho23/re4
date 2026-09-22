@@ -63,7 +63,7 @@ static f32 r222_angB1 = 3.17f;
 static f32 r222_angB2 = -0.29f;
 static f32 r222_angB3 = 0.13f;
 // the split object's .data is padded to 8 bytes
-asm(".section .data\n\t.balign 8\n\t.text");
+ASM_ANCHOR(".section .data\n\t.balign 8\n\t.text");
 
 static void r222_TreasureBoxOpen(int id);
 static void r222_TreasureBoxOpened(int id);
@@ -249,9 +249,14 @@ static void r222_TreasureBoxOpened(int id)
 // then hold 0 instead of the section offset), and a `static const` at file scope is deferred to the
 // end of the file. The wait body reads the word through the asm-labelled alias (a distinct
 // SYMBOL_REF: gcse cannot share the `high` r10 of the arms with it, the target reloads `lis r11`).
-asm(".section \".rodata\"\n\t.align 2\nr222_k212:\n\t.long 0x4007b8a5\n\t.section \".text\"");
+ASM_ANCHOR(".section \".rodata\"\n\t.align 2\nr222_k212:\n\t.long 0x4007b8a5\n\t.section \".text\"");
+#ifndef RE4_PORT
 extern const f32 r222_k212;
 extern const f32 r222_k212_v asm("r222_k212");
+#else
+extern const f32 r222_k212 = 2.1206448f;  // the anchor's .rodata word
+#define r222_k212_v r222_k212
+#endif
 
 // A revealed box's lid (parts ang.x) swings to 2.12 rad in 0.05 steps with its SE, or snaps there when opened == 1.
 void r222_BoxMove(cObj* obj, int opened)

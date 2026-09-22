@@ -7,7 +7,7 @@
 
 // The original object's .data is 8-aligned (ours would be 4-aligned): the REL's .data starts 4 bytes
 // after .rodata's end because of it.
-asm(".section .data\n\t.balign 8\n\t.section .text");
+ASM_ANCHOR(".section .data\n\t.balign 8\n\t.section .text");
 
 // Name lists for the editor's bit / type / set fields, "END"-terminated (one per enemy id, shared where
 // the enemies share an id family).
@@ -459,7 +459,13 @@ static EmListIdInfo EmListIdTbl[64] = {
 #include <string.h>
 
 // The player's position is all the tool needs from pPL (player.h would add its header strings).
+#ifndef RE4_PORT
 extern cEm* pPLem asm("pPL");
+#else
+class cPlayer;
+extern cPlayer* pPL;
+#define pPLem ((cEm*) pPL)
+#endif
 // The list index is stored through a reference in emlist_r0_target: the store then keeps the
 // following `pG` loads in the search loops (a plain member store lets them hoist).
 

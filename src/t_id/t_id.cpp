@@ -40,10 +40,14 @@
 // link without it. REL_MODULE comes from configure.py.
 #define T_ID_STR2(x) #x
 #define T_ID_STR(x) T_ID_STR2(x)
-asm(".comm common_" T_ID_STR(REL_MODULE) ",52,4");
+ASM_ANCHOR(".comm common_" T_ID_STR(REL_MODULE) ",52,4");
 
 // COMPILER-DIFF #4: the original passes the (u32) converted height without the u16 truncation.
+#ifndef RE4_PORT
 void ScreenReSizeI(int w, u32 h) asm("ScreenReSize");
+#else
+#define ScreenReSizeI ScreenReSize
+#endif
 
 // TexAnm header as read by the id editor (texture.h keeps the first 8 bytes opaque)
 struct TexAnmSize {
@@ -1291,7 +1295,7 @@ int idEditPos(IdTool* w, int x, int y)
                 break;
             case 4:
                 for (j = 0; j <= 7; j++) {
-                    register int col asm("r5"); // COMPILER-DIFF: #17 (col r5 vs r30, local ext pref)
+                    register int col REG_PIN("r5"); // COMPILER-DIFF: #17 (col r5 vs r30, local ext pref)
 
                     col = 7;
                     if (j == w->gridLv) {
@@ -2194,7 +2198,7 @@ int idEditTrans(IdTool* w, int x, int y)
             break;
         }
         case 2: {
-            register int step asm("r11") = (joy->on & 0x100) ? 10 : 1; // COMPILER-DIFF: pin (global-alloc order: the target allocates step (r11) before joy (r10))
+            register int step REG_PIN("r11") = (joy->on & 0x100) ? 10 : 1; // COMPILER-DIFF: pin (global-alloc order: the target allocates step (r11) before joy (r10))
 
             if (joy->rep & 0x10001) {
                 d->power -= step;

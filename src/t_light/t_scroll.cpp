@@ -119,7 +119,11 @@ static ScrollWork* scrollWorkPtr;
 // second view of the same symbol: an asm-labelled decl gets the assembler name "*scrollWorkPtr", a different
 // string from "scrollWorkPtr", so gcse/cse hash `high(sym)` of the two views as different expressions while
 // the assembler output is the same (edit_select_sub)
+#ifndef RE4_PORT
 extern ScrollWorkPtr scrollWorkPtrV asm("scrollWorkPtr");
+#else
+#define scrollWorkPtrV (*(ScrollWorkPtr*) &scrollWorkPtr)  // the view struct over the pointer
+#endif
 
 static char* localPath = "d:\\bio4/room/st%x/r%x%02x/r%x%02x%02d.smx";
 static char* serverPath = "x:\\soft/room/st%x/r%x%02x/r%x%02x%02d.smx";
@@ -1798,7 +1802,7 @@ static void printEditTable()
     // and the hard register carries the base through the tail without a REG_EQUIV (see the tail).
     // `obj->be_flag` is re-read at every use (the target's `mr r11,r0` is gcse's PRE copy of the isAlive
     // load, not a `flag` local).
-    register int x2 asm("r27");
+    register int x2 REG_PIN("r27");
     char name[8];
 
     {

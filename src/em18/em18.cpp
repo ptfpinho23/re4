@@ -32,7 +32,7 @@
 
 // The module's 0x34-byte COMMON block (st_room.h): uninitialised template statics of the original
 // object, merged into .bss by the REL link.
-asm(".comm common_em18,52,4");
+ASM_ANCHOR(".comm common_em18,52,4");
 
 
 typedef void (*Em18Func)(cEm18*);

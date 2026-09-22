@@ -80,7 +80,11 @@ static inline void r10b_waitEvt()
 }
 
 // The rooms call Event::FlgOnStatus out of line (event.h has it in-class).
+#ifndef RE4_PORT
 void EvtFlgOnStatus(Event* e, u32 no) asm("FlgOnStatus__5EventUl");
+#else
+#define EvtFlgOnStatus(e, no) (e)->FlgOnStatus(no)
+#endif
 
 extern "C" int readEvent(int no, int wait, void** out);
 extern "C" void freeEvent(int no);
@@ -907,4 +911,4 @@ static void r10b_setEm()
 }
 
 // the split object's .data is 8-aligned
-asm(".section .data; .balign 8");
+ASM_ANCHOR(".section .data; .balign 8");

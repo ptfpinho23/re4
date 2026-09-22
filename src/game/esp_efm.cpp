@@ -818,4 +818,4 @@ void setModTexRender(cObj* pMod, int no)
 }
 
 // .sdata alignment padding of the split object
-asm(".section .sdata; .balign 8");
+ASM_ANCHOR(".section .sdata; .balign 8");

@@ -94,4 +94,4 @@ void cObj03::move()
 }
 
 // The split object's .sdata is 8 bytes (hist + padding to the 8-aligned next unit).
-asm(".section .sdata; .balign 8");
+ASM_ANCHOR(".section .sdata; .balign 8");

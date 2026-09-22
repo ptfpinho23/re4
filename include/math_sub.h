@@ -7,6 +7,7 @@
 
 // libm's own declaration of fabsf clashes with the inline below (C linkage against static), so it is
 // renamed out of the way while <math.h> is read.
+#ifndef RE4_PORT
 #define fabsf fabsf_libm
 #include <math.h>
 #undef fabsf
@@ -19,6 +20,9 @@ static inline f32 fabsf(f32 x)
     asm volatile("fabs %0,%1" : "=f"(r) : "f"(x));
     return r;
 }
+#else
+#include <math.h>  // the port uses libm's fabsf
+#endif
 
 // Column `c` of a matrix read into a Vec.
 static inline void getColumn(Mtx m, int c, Vec* v) { v->x = m[0][c]; v->y = m[1][c]; v->z = m[2][c]; }

@@ -176,7 +176,7 @@ void titleWait(TitleWork* w)
             IdSys.roomInit();
             IdTexDataLoad(TITLE_ARC_PTR(w->pIdDat, 4), TEX_OWNER_ID_TITLE);
             {
-                register u8 z asm("r11");  // COMPILER-DIFF: #13 (REG_EQUIV zero reloaded into r11)
+                register u8 z REG_PIN("r11");  // COMPILER-DIFF: #13 (REG_EQUIV zero reloaded into r11)
                 z = 0;
                 w->Rno0 = 2;
                 w->sndFlag = 1;

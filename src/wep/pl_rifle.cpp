@@ -542,4 +542,4 @@ static void wep09_r2_next(cPlayer* pl)
 }
 
 // The module's .data section is 8-aligned in the original.
-asm(".section .data\n\t.balign 8\n\t.text");
+ASM_ANCHOR(".section .data\n\t.balign 8\n\t.text");

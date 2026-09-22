@@ -549,4 +549,4 @@ void setPlWaterOtType()
 }
 
 // The original's .rodata is 8-aligned (0x2A0, 4 bytes of end padding after the last pool).
-asm(".section .rodata; .balign 8");
+ASM_ANCHOR(".section .rodata; .balign 8");

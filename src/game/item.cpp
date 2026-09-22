@@ -2279,7 +2279,7 @@ int cItemMgr::combine(ItemWork* a, ItemWork* b, int flag)
                     }
                     a->bullet = (inv << 13) | (n & 0x1FFF);
                     {
-                        register ItemWork* arm asm("r0"); // COMPILER-DIFF: 17 (local-alloc fake-lifetime parity: the pArm load reuses r0 right after the x8 store's value dies)
+                        register ItemWork* arm REG_PIN("r0"); // COMPILER-DIFF: 17 (local-alloc fake-lifetime parity: the pArm load reuses r0 right after the x8 store's value dies)
 
                         arm = pArm;
                         if (a == arm) {
@@ -2319,7 +2319,7 @@ int cItemMgr::combine(ItemWork* a, ItemWork* b, int flag)
                     }
                     b->bullet = (inv << 13) | (n & 0x1FFF);
                     {
-                        register ItemWork* arm asm("r0"); // COMPILER-DIFF: 17 (local-alloc fake-lifetime parity: the pArm load reuses r0 right after the x8 store's value dies)
+                        register ItemWork* arm REG_PIN("r0"); // COMPILER-DIFF: 17 (local-alloc fake-lifetime parity: the pArm load reuses r0 right after the x8 store's value dies)
 
                         arm = pArm;
                         if (b == arm) {
@@ -2445,6 +2445,9 @@ int cItemMgr::partsCombine(ItemWork* pWeapon, ItemWork* pParts)
 int cItemMgr::available(ITEM_ID id)
 {
     FlagOn(m_pAvailable, id);
+#ifdef RE4_PORT
+    return 0;  // the original falls off the end
+#endif
 }
 
 // Clears the usable-item mask.
@@ -2634,7 +2637,7 @@ int cItemMgr::trigger()
     case 3:
     case 6: {
         ItemWork* p = pArm;
-        register int id asm("r9"); // COMPILER-DIFF: #2 (the original masks the u16 member before the call)
+        register int id REG_PIN("r9"); // COMPILER-DIFF: #2 (the original masks the u16 member before the call)
         id = m_wep_id;
         asm("" : "+r"(id));
 
@@ -2854,7 +2857,7 @@ void cItemMgr::save(void* pData)
     for (i = 0; i < m_array_num; i++, p++) {
         memclr_asm(&s[i], sizeof(ItemSaveWork));
         if (itemEmpty(p)) {
-            register int m1 asm("r0"); // COMPILER-DIFF: #13 (the 0xFFFF re-materialised at the store)
+            register int m1 REG_PIN("r0"); // COMPILER-DIFF: #13 (the 0xFFFF re-materialised at the store)
             m1 = -1;
             s[i].id = m1;
         } else {
@@ -3235,4 +3238,4 @@ void cItemMgr::debugWeapon(ITEM_ID id)
 }
 
 // the split object pads .sdata to 8 bytes (lbl_80313F4C)
-asm(".section .sdata; .balign 8");
+ASM_ANCHOR(".section .sdata; .balign 8");

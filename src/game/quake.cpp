@@ -61,7 +61,7 @@ void QuakeExec(u8 id, u16 delay, s16 time, f32 power, u8 axis)
 }
 
 // Stops every entry started with `id`.
-static void QuakeKill(u8 id)
+DOL_STATIC void QuakeKill(u8 id)
 {
     int i;
     QuakeEntry* e = Quake.ent;

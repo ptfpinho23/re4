@@ -295,4 +295,4 @@ static void Filter03DrawBuffer()
     GXSetAlphaUpdate(1);
 }
 
-asm(".section .sdata,\"aw\"\n\t.balign 32\n\t.text");
+ASM_ANCHOR(".section .sdata,\"aw\"\n\t.balign 32\n\t.text");

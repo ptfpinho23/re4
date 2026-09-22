@@ -570,7 +570,7 @@ void SceSetEventCancel(int on, TaskFunc func, int arg, int flagNo, int sndFlag)
     {
         // COMPILER-DIFF: candidate #17 (global.c pass 0 regs_used_so_far): r30 used-so-far makes `on`
         // take r30 in pass 0 and flagNo r31 (stock priorities give on r31, flagNo r30).
-        register int pin asm("r30");
+        register int pin REG_PIN("r30");
         asm volatile("" : "=r"(pin));
     }
 }

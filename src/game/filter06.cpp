@@ -136,7 +136,7 @@ void cParticle06::move()
     {
         // COMPILER-DIFF: #17. The alphaBase load/product live in r11 in the original (the fast-cast
         // address pseudo of `(u8) a` took r9 first); ours gives them r9. Pinned, no code emitted.
-        register int ab asm("r11");
+        register int ab REG_PIN("r11");
         ab = m_Base_alpha;
         v = (ab * (u8) a) >> 8;
     }
@@ -302,4 +302,4 @@ void Filter06Render()
     }
     GXEnableTexOffsets(0, 0, 0);
 }
-asm(".section .sdata; .balign 32");
+ASM_ANCHOR(".section .sdata; .balign 32");

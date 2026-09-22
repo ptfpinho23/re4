@@ -85,7 +85,7 @@ cRoomJmp::cRoomJmp(void* p)
             if (info == 0) {
                 continue;
             }
-            if ((u32) info->name >= 0x80000000 && (u32) info->name <= 0x82FFFFFF) {
+            if (GC_PTR_GOOD(info->name)) {
                 return;
             }
             info->name = (char*) ((u32) tbl + (u32) info->name);

@@ -601,4 +601,4 @@ static void plemRide(cPlayer* pl)
 }
 
 // The module's .data continues 8-aligned.
-asm(".section .data; .balign 8");
+ASM_ANCHOR(".section .data; .balign 8");

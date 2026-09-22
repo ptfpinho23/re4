@@ -53,7 +53,7 @@
 
 // The module's 0x30-byte COMMON block: uninitialised template statics of the original object,
 // appended to .bss by snmakerel.
-asm(".comm common_pl0f,48,4");
+ASM_ANCHOR(".comm common_pl0f,48,4");
 
 #line 1 "D:/Bio4/Prog/pl0f.cpp"
 

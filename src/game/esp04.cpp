@@ -106,7 +106,7 @@ void move10(cEsp04* esp)
             // The original's loop step lives in f0 and its `v = y` copy is issued after the
             // hoisted step/bound copies (y stays live past it, so the loop bound cannot take
             // y's f12): value pin + keep-alive.
-            register f32 s asm("fr0");  // COMPILER-DIFF: #17 (FPR value pin)
+            register f32 s REG_PIN("fr0");  // COMPILER-DIFF: #17 (FPR value pin)
             s = esp->m_Size_base_y;
             v = y;
             while (v < lim - esp->m_Size_base_x) {

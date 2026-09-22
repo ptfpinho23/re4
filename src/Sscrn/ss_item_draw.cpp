@@ -287,4 +287,4 @@ void ss_Draw_tile3d_local(Vec* a, Vec* b, Vec* c, Vec* d, Mtx mtx, u32 color, u3
 
 // The split object's .rodata is 4 bytes longer than the three pools: the next unit's .rodata (ss_main,
 // vtables) starts 8-aligned in the REL.
-asm(".section .rodata; .balign 8; .section .text");
+ASM_ANCHOR(".section .rodata; .balign 8; .section .text");

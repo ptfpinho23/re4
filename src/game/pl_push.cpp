@@ -375,4 +375,4 @@ int cPlPush::plAdjust()
 }
 
 // the split object's .rodata is 8-aligned (0xE0, the pool ends at 0xDC)
-asm(".section .rodata; .balign 8");
+ASM_ANCHOR(".section .rodata; .balign 8");

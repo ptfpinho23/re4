@@ -1029,8 +1029,8 @@ static void r202_setRock(cCatapult* c)
             // -0.024 high before the 0.0 high, so its local-alloc gave obj/pParts r10/r11 and the -0.024
             // high r8; ours issues the highs the other way round (equal priority, LUID) and names them
             // r10/r9/r11. Value-carrying pins on the two pointers give the target's names.
-            register cObj* o asm("r10");
-            register cModel* pp asm("r11");
+            register cObj* o REG_PIN("r10");
+            register cModel* pp REG_PIN("r11");
             o = c->obj;
             pp = o->pParts;
             pp->ang.x = 0.0f;

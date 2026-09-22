@@ -1248,7 +1248,7 @@ static void r201_throwBonbe(int no)
     // That summary exists only for pseudos (set_nonzero_bits_and_sign_copies skips hard registers),
     // so pinning eff0 to its own r16 keeps the masks with no other change (no extra ref, same
     // global-alloc order for eff3/r17).
-    register int eff0 asm("r16") = 0;
+    register int eff0 REG_PIN("r16") = 0;
     int eff1 = 0;
     int eff2 = 0;
     int eff3 = 0;

@@ -29,7 +29,7 @@
 
 // The module's 0x30-byte COMMON block (st_room.h): uninitialised template statics of the original
 // object, merged into .bss by the REL link.
-asm(".comm common_em21,48,4");
+ASM_ANCHOR(".comm common_em21,48,4");
 
 
 
@@ -92,7 +92,7 @@ void em21DmCk(cEm21* em)
         case DMG_TYPE_ENV_FIRE:
             mode = em->set;
             {
-                register int c asm("r9"); // COMPILER-DIFF: #13
+                register int c REG_PIN("r9"); // COMPILER-DIFF: #13
                 c = 0x1E;
                 em->dmg.m_Timer = c;
             }
@@ -170,9 +170,13 @@ static Camera em21_trap_cam = { 0 };
 // COMPILER-DIFF: candidate #12 (cse related-value): `cam = &em21_trap_cam` after the `&em21_trap_cam.param.pos/at`
 // pointers are known is a fresh `lis/addi` pair in the original; our cse rewrites it as `at - 0xB0`.
 // An asm-labelled alias declaration gives cse a distinct SYMBOL_REF and keeps the fresh pair.
+#ifndef RE4_PORT
 extern Camera em21_trap_cam_v asm("em21_trap_cam");
+#else
+#define em21_trap_cam_v em21_trap_cam
+#endif
 // .data is padded to 8 bytes before the linker's BSS tag word.
-asm(".section .data\n\t.balign 8\n\t.text");
+ASM_ANCHOR(".section .data\n\t.balign 8\n\t.text");
 
 // Per-frame update: clears the neck flag, damage check, route check (Em21RouteCk), the R0 table
 // (Init / Move / Damage and Die share R0_Move / Scenario), then the neck, collision and scenario check;

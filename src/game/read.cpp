@@ -97,12 +97,12 @@ ReadModule WepReadModule __attribute__((aligned(32)));
 
 #define READ_BUFF_OFS 0x142800
 #define ROOM_ARC_SIZE 0x300000
-#define CORE_DATA_ADDR ((void*) 0x80578000)
+#define CORE_DATA_ADDR ((void*) GC_ADDR(0x80578000))
 #define CORE_DATA_MAX 0x234000
-#define OPTION_DATA_ADDR ((void*) 0x807AC000)
+#define OPTION_DATA_ADDR ((void*) GC_ADDR(0x807AC000))
 #define OPTION_DATA_MAX 0x40000
-#define PL_DATA_ADDR 0x807EC000
-#define WEP_DATA_ADDR ((void*) 0x80904000)
+#define PL_DATA_ADDR ((u32) GC_ADDR(0x807EC000))
+#define WEP_DATA_ADDR ((void*) GC_ADDR(0x80904000))
 #define WEP_DATA_MAX 0x70000
 #define DLL_BSS_MAX 0x80
 
@@ -1023,4 +1023,4 @@ void* GetDataExt(void* pData, const char* pName, int no)
     return NULL;
 }
 
-asm(".section .bss; .balign 32");
+ASM_ANCHOR(".section .bss; .balign 32");

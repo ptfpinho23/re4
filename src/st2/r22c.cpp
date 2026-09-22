@@ -1720,7 +1720,7 @@ void ResultScreen::highscore(int score)
 {
     int digit[7];
     int i;
-    register int pin asm("r28"); // COMPILER-DIFF: candidate #17 (see below)
+    register int pin REG_PIN("r28"); // COMPILER-DIFF: candidate #17 (see below)
 
     IdTexRelease(TEX_OWNER_ID_COCKPIT);
     IdSys.roomInit();
@@ -2001,4 +2001,4 @@ static void r22c_checkShootingScore()
     SceEventEnd(0);
 }
 
-asm(".section .data\n\t.balign 8\n\t.text");
+ASM_ANCHOR(".section .data\n\t.balign 8\n\t.text");

@@ -1175,8 +1175,8 @@ void CameraQuasiFPS::init()
     // u8&/s16& setters would copy a hard register into a pseudo) plus one codeless keep-alive
     // at the block end so no store has a dying source.
     int one;
-    register int two asm("r8");    // COMPILER-DIFF: #13 (value pin)
-    register int zero asm("r7");   // COMPILER-DIFF: #13 (value pin)
+    register int two REG_PIN("r8");    // COMPILER-DIFF: #13 (value pin)
+    register int zero REG_PIN("r7");   // COMPILER-DIFF: #13 (value pin)
     f32 fz;
     u32 fl;
     one = 1;

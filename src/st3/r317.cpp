@@ -69,7 +69,7 @@ static R317Work* r317_work;
 
 // The original object's .rodata (0x4cc -> 0x4d0) and .data (0xdc -> 0xe0) are 8-aligned: r318's
 // sections start 8-aligned in the REL.
-asm(".section .rodata\n\t.balign 8\n\t.section .data\n\t.balign 8\n\t.text");
+ASM_ANCHOR(".section .rodata\n\t.balign 8\n\t.section .data\n\t.balign 8\n\t.text");
 static SceElevator2Data r317_elvUp = {3, 0x2A, 0x19, 0x1A, {0.0f, 0.0f, 0.0f}, {0.0f, 10825.0f, 0.0f}, {6860.0f, -4775.0f, 11950.0f}, {6860.0f, 6016.0f, 11950.0f}, {0.0f, 3.1415927f, 0.0f}, 2, 3, 2, 4, 3, 0};
 static SceElevator2Data r317_elvDown = {1, 0x2A, 0x19, 0x1A, {0.0f, 10825.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, {6860.0f, 6016.0f, 11950.0f}, {6860.0f, -4775.0f, 11950.0f}, {0.0f, 1.5707964f, 0.0f}, 3, 2, 2, 4, 3, 0};
 
@@ -84,7 +84,11 @@ static f32 r317_elvAccelUp = 1.5f;
 static f32 r317_elvStopAddUp = 2000.0f;
 
 // The rooms call Event::FlgOnStatus out of line (event.h has it in-class).
+#ifndef RE4_PORT
 void EvtFlgOnStatus(Event* e, u32 no) asm("FlgOnStatus__5EventUl");
+#else
+#define EvtFlgOnStatus(e, no) (e)->FlgOnStatus(no)
+#endif
 
 
 // Every s00..s14 handler deletes the same effect on begin.

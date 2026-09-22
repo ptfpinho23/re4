@@ -49,7 +49,7 @@
 #include "em_mod.h"
 #include "obj20.h"
 
-asm(".comm common_em32,52,4");
+ASM_ANCHOR(".comm common_em32,52,4");
 
 int GetWepDmVal(cEm* em, u32 wep_no, int near);   // em10.h (not included: it pulls emwep.h's global plemBackjump)
 extern FootShadowTbl Em32_fs_tbl;     // game/foot_shadow_tbl.cpp (static there, so not in foot_shadow.h; the REL link resolves the local symbol)
@@ -271,7 +271,7 @@ static u8 em32_cloth_parts[12] = { 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x1
 static u8 em32_cloth_up[12] = { 0xFF, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0xFF, 0x3D, 0x3E, 0x3F };
 static u8 em32_cloth_down[12] = { 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0xFF, 0x3E, 0x3F, 0x40, 0xFF };
 static f32 em32_cloth_max[12] = { 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
-asm(".section .data\n\t.balign 8\n\t.text");
+ASM_ANCHOR(".section .data\n\t.balign 8\n\t.text");
 
 extern "C" void _prolog()
 {
@@ -703,8 +703,8 @@ static void em32_R0_Init(cEm32* em)
     // The 600/0xFF constants are REG_EQUIV pseudos the original never allocates: reload re-materialises
     // them in the spill registers r10/r9 (59 takes r11); ours local-allocs them the other way round.
     {
-        register int lw asm("r10"); // COMPILER-DIFF: #13
-        register int bn asm("r9"); // COMPILER-DIFF: #13
+        register int lw REG_PIN("r10"); // COMPILER-DIFF: #13
+        register int bn REG_PIN("r9"); // COMPILER-DIFF: #13
         lw = 600;
         w->longAtkWait = lw;
         w->voiceTimer = 59;
@@ -730,9 +730,9 @@ static void em32_R0_Init(cEm32* em)
     // routine stores. sched2 issues `li r0,1` after `stb r11,0xfd` (both priority 15; ours has one more
     // dependent on the stb) unless the `li` gets a dependent, see the asm below.
     {
-        register int hp asm("r0"); // COMPILER-DIFF: #13
-        register int six asm("r11"); // COMPILER-DIFF: #13
-        register int one asm("r0"); // COMPILER-DIFF: #13
+        register int hp REG_PIN("r0"); // COMPILER-DIFF: #13
+        register int six REG_PIN("r11"); // COMPILER-DIFF: #13
+        register int one REG_PIN("r0"); // COMPILER-DIFF: #13
         hp = 500;
         em->hp = hp;
         six = 6;

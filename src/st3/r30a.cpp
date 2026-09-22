@@ -25,7 +25,7 @@
 // the s00 escape event that jumps to 3-16 and the s10 event.
 
 // The original's .rodata is 8-aligned (a pad word after the header strings and at the end).
-asm(".section .rodata; .balign 8");
+ASM_ANCHOR(".section .rodata; .balign 8");
 
 struct R30aWork {
     cSceObj elv;   // 0x00

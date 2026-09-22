@@ -1096,4 +1096,4 @@ void CameraLookDownEm::move()
 }
 
 // The split object pads .sdata to 8 bytes (cam_qfps follows 8-aligned).
-asm(".section .sdata; .balign 8");
+ASM_ANCHOR(".section .sdata; .balign 8");

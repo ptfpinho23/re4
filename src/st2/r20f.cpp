@@ -412,4 +412,4 @@ static void R20fEmWanderingSet()
 }
 
 // The module's .data continues 8-aligned (st2.cpp).
-asm(".section .data; .balign 8");
+ASM_ANCHOR(".section .data; .balign 8");

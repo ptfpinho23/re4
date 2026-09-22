@@ -477,4 +477,4 @@ void EstSetEm10WaterFall(Vec* pMod)
     }
 }
 
-asm(".section .rodata; .balign 8");
+ASM_ANCHOR(".section .rodata; .balign 8");

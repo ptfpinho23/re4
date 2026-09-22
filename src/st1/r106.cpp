@@ -296,7 +296,7 @@ extern "C" void r106_openShelf_main(int type, int opened)
             // `lfs` in sched1, so the two highs' spans tie and the -1.92 high is allocated first.
             // The keep-alive reads b (not a) so the a/b global-alloc order is unchanged.
             cModel* pa = *(cModel* volatile*) &a->pParts;
-            register cModel* pa2 asm("r10");
+            register cModel* pa2 REG_PIN("r10");
 
             pa2 = pa;
             pa2->ang.y = ra;

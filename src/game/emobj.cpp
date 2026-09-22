@@ -183,7 +183,7 @@ void cEmObj::setYarare(s16 no, Vec* pos, u16 flag, int cube, f32 w, f32 h, f32 r
     // narrow-argument compiler difference). Ours does (combine's setup_incoming_promotions), so every
     // int/narrow/cast form folds the extensions away; the empty asms hide the promotion from combine
     // and `f` is pinned to flag's incoming r6 so the `ori` stays in place.
-    register int f asm("r6") = flag;
+    register int f REG_PIN("r6") = flag;
     int n = no;
     asm("" : "+r"(n));
     asm("" : "+r"(f));

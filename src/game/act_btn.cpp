@@ -111,7 +111,7 @@ void cActionButton::disp(ActBtnWork* work)
     int x;
     // COMPILER-DIFF: candidate (local-alloc order): `fontH / 2` is computed in the MesSet argument
     // register r6 in the target; here the third fpmem-address scratch copy (`mr r6,r10`) takes r6 first.
-    register int y asm("r6");
+    register int y REG_PIN("r6");
 
     if (work->flags & ACTCTR_DOOR_COLOR) {
         col = 7;
@@ -150,7 +150,7 @@ void cActionButton::disp(ActBtnWork* work)
 // Every failing test `break`s to the one `return 0` after the switch (a plain `return 0` in a two-way
 // leaf gets its `li r3,0` hoisted into a conditional return by jump1; a jump to the shared block does
 // not), and the `(u64) key & ~mask` test is written in each leaf (jump2 cross-jumps the two `!(flags &
-// 2)` copies into the first one, `mr r10,rX; b`). The `register u64 key asm("r9")` pin fixes the DI pair
+// 2)` copies into the first one, `mr r10,rX; b`). The `register u64 key REG_PIN("r9")` pin fixes the DI pair
 // order. Cases 9/0xA: separate case nodes (the target compares 9 and 0xA individually) that reach the ONE
 // `li r3,0; blr` block; `case 9: return 0; case 0xA: return 0;` gives a second block (its `set r3 0;
 // (return)` cannot cross-jump with the end block, whose `(use r3)` sits between the set and the return),
@@ -165,7 +165,7 @@ int cActionButton::checkButton(ActBtnWork* work)
     // that gets the pair left over after local-alloc gave the `key & ~mask` temp r9:r10; the target has
     // key in r9:r10 and the temp in r11:r12. With the pair fixed, the `or.` scratch alternates r0/r9 as
     // in the target, so the C/D leaves stay separate copies (their `or. r9` no longer matches `or. r0`).
-    register u64 key asm("r9");
+    register u64 key REG_PIN("r9");
     u32 flags;
 
     switch (work->btn) {

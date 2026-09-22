@@ -649,7 +649,7 @@ static void data_edit()
             if (work->pt == tbl->num - 1) {
                 if (tbl->e[work->pt].dist != 100.0f) {
                     // COMPILER-DIFF: register pin (local-alloc gives ne r10 / editMode r8; the target has r8 / r7)
-                    register TblEnt* ne asm("r8") = &tbl->e[tbl->num];
+                    register TblEnt* ne REG_PIN("r8") = &tbl->e[tbl->num];
 
                     ne->dist = ne[-1].dist + 1.0f;
                     ne->val = ne[-1].val;
@@ -1028,8 +1028,8 @@ void editScreenDisp()
     for (i = 0; i <= rows; i++) {
         // value pins (local-alloc fake-lifetime parity): the original keeps the SI sum in r0 and the
         // sign-extended row in a fresh r10; ours lets the extsh reuse the dying r0
-        register int v2 asm("r10"); // COMPILER-DIFF: candidate (local-alloc qty order)
-        register int t asm("r0");   // COMPILER-DIFF: candidate (local-alloc qty order)
+        register int v2 REG_PIN("r10"); // COMPILER-DIFF: candidate (local-alloc qty order)
+        register int t REG_PIN("r0");   // COMPILER-DIFF: candidate (local-alloc qty order)
         t = base + i * 0x14;
         v2 = (s16) t;
         pt[0].x = x;
@@ -1048,8 +1048,8 @@ void editScreenDisp()
         // copy into a pinned hard register is that copy (a hard-register operand is not anticipatable at the
         // block entry, so neither sum is PRE'd, and a plain register copy is never a gcse expression).
         // the copy shares the dead work-pointer register r10 and `b - 4` is a fresh r0 (not in place)
-        register int b asm("r10"); // COMPILER-DIFF: candidate (local-alloc qty order)
-        register int t asm("r0");  // COMPILER-DIFF: candidate (local-alloc qty order)
+        register int b REG_PIN("r10"); // COMPILER-DIFF: candidate (local-alloc qty order)
+        register int t REG_PIN("r0");  // COMPILER-DIFF: candidate (local-alloc qty order)
         b = base;
         pt[0].x = x;
         pt[0].z = 0;
@@ -1169,18 +1169,18 @@ static void edit_reverb_param()
         work->efxCur[work->setCur]++;
     } else if (Joy[0].rep & 0x10001) {
         if (work->setCur == 0) {
-            register SndEfxParam* p asm("r10") = &work->efx[0]; // COMPILER-DIFF: pin (global-alloc order: the target allocates work before p: work r11, p r10, Joy r10)
+            register SndEfxParam* p REG_PIN("r10") = &work->efx[0]; // COMPILER-DIFF: pin (global-alloc order: the target allocates work before p: work r11, p r10, Joy r10)
             EFX_PARAM_MOVE(EFX_SW_DPL2, 0, -=)
         } else {
-            register SndEfxParam* p asm("r10") = &work->efx[1]; // COMPILER-DIFF: pin
+            register SndEfxParam* p REG_PIN("r10") = &work->efx[1]; // COMPILER-DIFF: pin
             EFX_PARAM_MOVE(EFX_SW_ST, 1, -=)
         }
     } else if (Joy[0].rep & 0x20002) {
         if (work->setCur == 0) {
-            register SndEfxParam* p asm("r10") = &work->efx[0]; // COMPILER-DIFF: pin
+            register SndEfxParam* p REG_PIN("r10") = &work->efx[0]; // COMPILER-DIFF: pin
             EFX_PARAM_MOVE(EFX_SW_DPL2, 0, +=)
         } else {
-            register SndEfxParam* p asm("r10") = &work->efx[1]; // COMPILER-DIFF: pin
+            register SndEfxParam* p REG_PIN("r10") = &work->efx[1]; // COMPILER-DIFF: pin
             EFX_PARAM_MOVE(EFX_SW_ST, 1, +=)
         }
     }

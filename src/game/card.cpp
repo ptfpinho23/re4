@@ -158,7 +158,11 @@ public:
 void dispSaveInfo(int no, SaveInfo* info, int type, int broken);
 // cCard::exit passes the saved int width as a full word (`lwz`, not the `lhz 0x41a` narrowing a u16
 // parameter gets): int view of ScreenReSize.
+#ifndef RE4_PORT
 extern "C" void ScreenReSizeI(int w, int h) asm("ScreenReSize");
+#else
+#define ScreenReSizeI ScreenReSize
+#endif
 
 int isDbgInfoAlloc = 0;
 static int isDbgInfoCached = 0;
@@ -3687,4 +3691,4 @@ void setMsgBG(int a, int flag)
     }
 }
 
-asm(".section .sdata; .balign 32");
+ASM_ANCHOR(".section .sdata; .balign 32");

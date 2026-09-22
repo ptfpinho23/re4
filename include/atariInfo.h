@@ -18,6 +18,13 @@ enum PRIORITY {
 // `addi rX,this,0x2B4; lhz 0x1A(rX); andi. 0xFCFF` (address computed once, used by the load and
 // the store; the mask folded to 16 bits). A direct member access folds the address into one
 // displacement; an inline taking the bit as a parameter gives `rlwinm` instead of `andi.`.
+// cModel::cModel constructs the embedded info in place; the port has no constructor to call.
+#ifndef RE4_PORT
+#define ATARI_INFO_CONSTRUCT(a) new (&a) cAtariInfo
+#else
+#define ATARI_INFO_CONSTRUCT(a) (a).construct()
+#endif
+
 class cAtariInfo {
 public:
     Vec m_offset;         // 0x00  offset from the model (rotated by the model's rot)
@@ -39,7 +46,13 @@ public:
         cAtariInfo* m_pList;    // 0x48  next info of the chain (at_mod DrawOba)
     };
 
+#ifndef RE4_PORT
     cAtariInfo();
+#else
+    // Port: no constructor, so the class can sit in cModel's anonymous union (GCC 15 rejects a
+    // member with a constructor there); cModel::cModel zeroes it through ATARI_INFO_CONSTRUCT.
+    void construct() { for (u32 i = 0; i < sizeof(cAtariInfo); i++) ((u8*) this)[i] = 0; }
+#endif
     void init0(f32 ox, f32 oy, f32 oz, f32 rs, f32 ro, f32 ra, f32 h, int pno, int hokan, int flags);
     // init(..., parts, flags, hokan) = init0(..., parts, hokan, flags); m_flag |= 1
     void init(f32 ox, f32 oy, f32 oz, f32 rs, f32 ro, f32 ra, f32 h, int pno, int flags, int hokan);

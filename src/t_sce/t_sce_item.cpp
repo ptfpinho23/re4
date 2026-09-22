@@ -771,10 +771,17 @@ static const char* tSceItemHitTypeName[4] = {"UNDER", "FRONT", "UNDER+ANGLE", "F
 // The first pCur read of each case is a fresh `lis` in the original; our cse1 substitutes the
 // earlier high pseudo along the dispatch tree and gcse then copy-propagates the PRE reg into the
 // later sites of the case (the t_sce_at basic_menu mechanism).  Distinct SYMBOL_REFs keep them apart.
+#ifndef RE4_PORT
 extern SceAtWorkPtr sceItemCur_c0 asm("sceItemCur"); // COMPILER-DIFF: #12 (cse path / PRE copy)
 extern SceAtWorkPtr sceItemCur_c1 asm("sceItemCur"); // COMPILER-DIFF: #12 (cse path / PRE copy)
 extern SceAtWorkPtr sceItemCur_c2 asm("sceItemCur"); // COMPILER-DIFF: #12 (cse path / PRE copy)
 extern SceAtWorkPtr sceItemCur_c3 asm("sceItemCur"); // COMPILER-DIFF: #12 (cse path / PRE copy)
+#else
+#define sceItemCur_c0 (*(SceAtWorkPtr*) &sceItemCur)
+#define sceItemCur_c1 (*(SceAtWorkPtr*) &sceItemCur)
+#define sceItemCur_c2 (*(SceAtWorkPtr*) &sceItemCur)
+#define sceItemCur_c3 (*(SceAtWorkPtr*) &sceItemCur)
+#endif
 #define PC(n) (sceItemCur_##n.p)
 // The shared rows HIT TYPE, HIT ANGLE, OPEN ANGLE, PRIORITY: `sel` is the cursor row, left/right
 // change it, values printed beside the menu.
@@ -1699,7 +1706,7 @@ void loadItemIdName(const char* path, char* names, char* names2)
         // The original allocates `e`/`no` to r30 and `p` to r31 although e outranks p in global-alloc
         // priority: r30 was ever-live before global-alloc there.  Two codeless asms make r30
         // used-so-far, so e/no take it in pass 0 and p falls to r31 in pass 1.
-        register int pin asm("r30"); // COMPILER-DIFF: candidate #17
+        register int pin REG_PIN("r30"); // COMPILER-DIFF: candidate #17
         asm("" : "=r"(pin));
         asm("" : : "r"(pin));
     }
@@ -1758,4 +1765,4 @@ char* getItemIdStr(u32 id)
     return pW->idName2[id - 0x1000];
 }
 
-asm(".section .data; .balign 8");
+ASM_ANCHOR(".section .data; .balign 8");

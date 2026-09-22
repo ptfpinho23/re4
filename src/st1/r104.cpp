@@ -74,7 +74,7 @@ static R104Work* r104_work;
 
 // The original's .rodata and .data are 8-aligned (the .rodata end is padded to 0x2a8; r105 has the same).
 // Both tables are global in the REL (ADDR16 fields hold A only).
-asm(".section .rodata; .balign 8; .section .data; .balign 8");
+ASM_ANCHOR(".section .rodata; .balign 8; .section .data; .balign 8");
 R104ResetData r104_resetData[4] = {
     {{0xD9, 0xDA, 0xDB}, 2, 3, 4, 1},
     {{0xDC, 0xDD, 0xDE}, 5, 6, 7, 2},
@@ -95,7 +95,11 @@ R104PatrolData r104_patrolData[7] = {
 
 
 // The rooms call Event::FlgOnStatus out of line (event.h has it in-class).
+#ifndef RE4_PORT
 void EvtFlgOnStatus(Event* e, u32 no) asm("FlgOnStatus__5EventUl");
+#else
+#define EvtFlgOnStatus(e, no) (e)->FlgOnStatus(no)
+#endif
 
 
 static void r104_checkBgmPlay();

@@ -1281,7 +1281,7 @@ void SceElevator(SceElevatorData* d)
     int i;
     int j;
     u32 hSnd;
-    register Vec* jp asm("r25");  // COMPILER-DIFF: register pin (see the comment above the function)
+    register Vec* jp REG_PIN("r25");  // COMPILER-DIFF: register pin (see the comment above the function)
 
     obj = SmdGetObjPtr(d->objId);
     if (obj == 0) {
@@ -1472,4 +1472,4 @@ void cManager<T>::endEvent(int mode)
     }
 }
 
-asm(".section .sdata,\"aw\"\n\t.balign 8\n\t.text");
+ASM_ANCHOR(".section .sdata,\"aw\"\n\t.balign 8\n\t.text");

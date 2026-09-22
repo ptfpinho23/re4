@@ -521,4 +521,4 @@ void tcSetBesideCamera()
 }
 
 // the split object ends .rodata with a 4-byte pad to 8 (the linker does not re-create it)
-asm(".section .rodata; .balign 8; .text");
+ASM_ANCHOR(".section .rodata; .balign 8; .text");

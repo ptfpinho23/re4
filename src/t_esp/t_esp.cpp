@@ -289,10 +289,17 @@ struct TOOL_WINDOW {
     // fp-relative pos stores: `mr r30,r3; stw r29,4(r30); stw rP,0(r30)`), yet the calls are `bl __builtin_new`. A class-scope
     // allocator bound to that symbol gives the same RTL: calls.c special_function_p sets is_malloc only for a DECL_CONTEXT ==
     // NULL_TREE decl, so no REG_NOALIAS note is put on the result copy and alias.c record_set leaves the pseudo's base 0.
+#ifndef RE4_PORT
     static void* operator new(unsigned n) asm("__builtin_new");
+#else
+    static void* operator new(unsigned n);  // defined after __builtin_new below
+#endif
     DB_PRIM_ARRAY* pa;
     DB_WINDOW* win;
 };
+#ifdef RE4_PORT
+void* TOOL_WINDOW::operator new(unsigned n) { return __builtin_new(n); }
+#endif
 
 // COMPILER-DIFF: candidate (cse1 hash-table flush position): cse.c cse_basic_block empties its table every 1001 insns of
 // a path, and InitTool's path after the EDIT windows runs to the end of the function (13528 sets). The target's flush points

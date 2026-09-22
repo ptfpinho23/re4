@@ -52,7 +52,7 @@ u32 upDownCk(cPlayer* pl);
 
 // Partner (id 3) dead while the player is in routine 0: routine 6 (die), damage info 0x80. An
 // inline member of the class whose vtable this unit owns: emitted here after the destructor.
-inline void cPlayer::subCharLiveCheck()
+UNIT_INLINE void cPlayer::subCharLiveCheck()
 {
     cEm* sub = pSubEm;
     if (sub && sub->id == 3 && sub->hp <= 0 && r_no_0 == 0) {
@@ -1733,7 +1733,7 @@ void cMot3::set(cModel* m, void* m0, void* m1, void* m2, void* seq, u8 b, int c,
     // any mask written on `b`. Reading the incoming register through a pin gives the
     // zero_extendqisi2 no LOG_LINK to fold through (and no CC clobber: sched1 weight 0, so it
     // is ranked like the original's insn).
-    register int rb asm("r9");
+    register int rb REG_PIN("r9");
     int mode = (u8) rb;
 
     m_pEm = m;

@@ -33,7 +33,7 @@ static void pl_R1_KlauserAttack(cPlayer* pl);
 static TexRenderMng* pl0aTex;
 static u8 pl0aTexTbl[0x20];
 static f32 pl0aAlphaBase = 80.0f;
-asm(".section .data\n\t.balign 8\n\t.text");   // the module's .data is 8-aligned before the BSS tag
+ASM_ANCHOR(".section .data\n\t.balign 8\n\t.text");   // the module's .data is 8-aligned before the BSS tag
 
 // Gives the mutation glow model (krModel[2]) a texture-render material: allocates a TexRenderMng
 // (pl0aTex, replace type 1) whose render texture id goes into the blend table pl0aTexTbl, spawns

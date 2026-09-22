@@ -343,7 +343,7 @@ void drawPoint(Vec* p0, Vec* p1)
         // COMPILER-DIFF: #17. `esp` is address-taken, so each store reloads it; the original's first
         // reload sits in r11 (r9 was still held by the previous reload at its sched1 position), ours
         // in r9. Pinned, no code emitted.
-        register cEsp* e asm("r11");
+        register cEsp* e REG_PIN("r11");
         e = esp;
         e->m_Blend_mode = 1;
         esp->m_Src_factor = 4;

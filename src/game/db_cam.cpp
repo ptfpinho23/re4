@@ -1573,4 +1573,4 @@ int adjust_qFPS(JOY* pJoy, int x, int y, int flag, int* out)
     return ret;
 }
 
-asm(".section .sdata; .balign 8");
+ASM_ANCHOR(".section .sdata; .balign 8");

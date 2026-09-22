@@ -421,7 +421,7 @@ int cameraHitCheck(Vec* pos, Vec* nrm, Vec* from, Vec* to)
         // COMPILER-DIFF: register pin (r29) plus launder. The pin keeps `at` out of cse's canonical class
         // (hard regs go last), so the copy loop's address is the `this` temporary; the launder gives `at` a
         // second set so the `at = this` copy is not propagated into the later field accesses.
-        register cAtariInfo* at asm("r29") = &atBuf;
+        register cAtariInfo* at REG_PIN("r29") = &atBuf;
         asm("" : "+r"(at));
         cModel* parts;
         Vec w;

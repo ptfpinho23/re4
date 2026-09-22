@@ -411,7 +411,7 @@ void R100Main()
 }
 
 // The original's .data is 8-aligned (r105 has the same).
-asm(".section .data; .balign 8");
+ASM_ANCHOR(".section .data; .balign 8");
 static char* r100_evtName[10] = {
     "evd/r100s03.evd", "evd/r100s01.evd", "evd/r100s02.evd", "evd/r100s20.evd", "evd/r100s30.evd",
     "evd/r100s41.evd", "evd/r100s42.evd", "evd/r100s43.evd", "evd/r100s44.evd", "evd/r100s40.evd",

@@ -98,10 +98,10 @@ void Render_init()
     GXRenderModeObj* rm = &Rmode;
 
     SetTvMode(rm);
-    pFrame_buff[0] = (void*) 0x80460000;
+    pFrame_buff[0] = (void*) GC_ADDR(0x80460000);
     pCurrent_buff = pFrame_buff[1] =
-        (void*) (0x80460000 + VIPadFrameBufferWidth(rm->viWidth) * rm->xfbHeight * 2);
-    DefaultFifo = (void*) 0x803F0000;
+        (void*) ((u32) GC_ADDR(0x80460000) + VIPadFrameBufferWidth(rm->viWidth) * rm->xfbHeight * 2);
+    DefaultFifo = (void*) GC_ADDR(0x803F0000);
     VIConfigure(rm);
     DefaultFifoObj = GXInit(DefaultFifo, 0x70000);
     ScreenGXSet();
@@ -457,7 +457,7 @@ void DrawTpl(TEXPalette* tpl, int x, int y, int w, int h)
     CLUTHeader* clut;
     u32 addr = (u32) tpl;
 
-    if (addr < 0x80000000 || addr > 0x82FFFFFF) {
+    if (GC_ADDR_BAD(addr)) {
         return;
     }
     desc = (TEXDescriptor*) (tpl + 1);
@@ -477,7 +477,7 @@ void DrawTpl(TEXPalette* tpl, int x, int y, int w, int h)
         }
     }
     hdr = desc->textureHeader;
-    if ((u32) hdr > 0x82FFFFFF) {
+    if (GC_PTR_HIGH(hdr)) {
         return;
     }
     if (hdr->format - 8 <= 1) {

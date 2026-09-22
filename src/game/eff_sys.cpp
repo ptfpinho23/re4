@@ -1150,4 +1150,4 @@ void RoomEfmRegist(void* model, void* tpl, u8 id)
     efmRegist(model, tpl, NULL, NULL, id, 1);
 }
 
-asm(".section .sdata; .balign 8");
+ASM_ANCHOR(".section .sdata; .balign 8");

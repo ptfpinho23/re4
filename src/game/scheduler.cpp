@@ -179,6 +179,7 @@ void* TaskExec_hook(void* value)
     if (pParentThread != NULL) {
         OSSuspendThread(pParentThread);
     }
+#ifndef RE4_PORT  // GQR2..5 = u8/u16/s8/s16, scale 0: the port's PSQ_* macros assume exactly this
     asm("li 3, 4\n"
         "oris 3, 3, 4\n"
         "mtspr 914, 3\n"
@@ -194,6 +195,7 @@ void* TaskExec_hook(void* value)
         :
         :
         : "r3");
+#endif
     GXSetCurrentGXThread();
     pCTask->pFunc((int) value);
     return NULL;

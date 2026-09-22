@@ -38,7 +38,11 @@
 
 void Obj18CmfOn(cObj* o, u32 n);   // game/obj18.cpp
 // Event::FlgOnStatus is called out of line here (the DOL copy), not the header inline.
+#ifndef RE4_PORT
 void EvtFlgOnStatus(Event* e, u32 no) asm("FlgOnStatus__5EventUl");
+#else
+#define EvtFlgOnStatus(e, no) (e)->FlgOnStatus(no)
+#endif
 // The chief (game/em2b.cpp): only the two event virtuals the room calls.
 class cEm2b : public cEm {
 public:
@@ -59,7 +63,7 @@ static int r11f_actNo;
 static R11fWork* r11f_work;
 
 // the split object's .data is 8-aligned
-asm(".section .data; .balign 8");
+ASM_ANCHOR(".section .data; .balign 8");
 static int r11f_actOn = 0;
 
 extern "C" void r11f_DoorReplace();

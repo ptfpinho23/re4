@@ -325,10 +325,10 @@ void PenClothMove(cModel* m, PenCloth* c)
                 // plain hard-register copy `pv = pa` survives (r5 is still live for the call, so combine
                 // cannot fold it and regmove stops at the call); the codeless asm reading pv with r3/r4
                 // inputs puts the copy after the last argument move in sched2, the target's issue order.
-                register Vec* pa asm("r5") = &v;
-                register Vec* pw asm("r3") = &w->pos;
-                register Vec* pm asm("r4") = &mpos;
-                register Vec* pv asm("r28");
+                register Vec* pa REG_PIN("r5") = &v;
+                register Vec* pw REG_PIN("r3") = &w->pos;
+                register Vec* pm REG_PIN("r4") = &mpos;
+                register Vec* pv REG_PIN("r28");
                 pv = pa;
                 asm("" : "+r"(pv) : "r"(pm), "r"(pw));
                 PSVECSubtract(pw, pm, pa);
@@ -563,7 +563,7 @@ void PenClothMove2(cModel* m, PenCloth* c)
     PenParts* w;
     PenParts* uw;
     cModel* np;   // neighbour parts (one variable for every lookup: r7 in the original)
-    register const u8* pp asm("r21");   // COMPILER-DIFF: #17 (register pin): pp above i in global-alloc
+    register const u8* pp REG_PIN("r21");   // COMPILER-DIFF: #17 (register pin): pp above i in global-alloc
     u32 i;
     u32 k;
     int hit;
@@ -1174,7 +1174,7 @@ PenAtWork* penClothAtMake(cModel* m, CLOTH_AT_SET* at, int n)
     if (at == 0 || n == 0 || m == 0) {
         return 0;
     }
-    wk = (PenAtWork*) 0xE0000000;
+    wk = (PenAtWork*) LC_BASE;
     a = wk->at;
     wk->num = n;
     wk->pAt = a;
@@ -1647,4 +1647,4 @@ void PenWindSet(f32 dir, f32 power, f32 x)
 }
 
 // The next unit's .sdata starts 8-byte aligned in the original link.
-asm(".section .sdata; .balign 8");
+ASM_ANCHOR(".section .sdata; .balign 8");

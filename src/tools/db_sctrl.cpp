@@ -378,7 +378,7 @@ static int sctrlMenu(DbSctrlWork* w)
 
                     // the original computes both fabs arms straight into f1 (the log10 argument): the
                     // SF->DF extend of the select gives its pseudo no f1 preference in ours (f0 + fmr f1)
-                    register f32 m asm("fr1"); // COMPILER-DIFF: candidate #17 (FLOAT_EXTEND argument preference)
+                    register f32 m REG_PIN("fr1"); // COMPILER-DIFF: candidate #17 (FLOAT_EXTEND argument preference)
                     if (fabsf(a) > fabsf(b)) {
                         m = fabsf(a);
                     } else {

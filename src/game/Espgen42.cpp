@@ -457,7 +457,11 @@ int GetWaterCrossPos(Vec* pos, Vec* dir, Vec* Ret)
 // the noise lbzx and the neighbour loads after it in the target's loop A. Loads straight into the destination
 // variable (no statement-expression temp): the target's `psq_l f10; fsubs f10,f10` is one pseudo, the
 // function-level `n`. The same definition as trans.cpp (asm stays in the unit so asmcheck.py counts it).
+#ifndef RE4_PORT
 #define PSQ_L_U8_TO(dst, p) asm volatile("psq_l %0,0(%1),1,2" : "=f"(dst) : "b"(p) : "memory")
+#else
+#define PSQ_L_U8_TO(dst, p) ((dst) = (f32) *(const u8*) (p))  // GQR2: u8, scale 0
+#endif
 
 // Step 0, every frame: the wave simulation. Sets Status_flg[0] 0x200 (water present), then for
 // every interior grid point integrates the two height buffers (neighbour sum spring, damping
@@ -672,7 +676,7 @@ void Espgen42_Move00(EspgenWork* pGen)
                     // COMPILER-DIFF: candidate #17 (r0 occupant): `j / 8` pinned to r0 = a hard-register conflict of the i
                     // copy `t_i` with r0 during the i-division blocks, so global.c's preference override skips r0 and t_i
                     // takes r9 (the target's `mr r9,i`); jq's shift then inherits r0 (`slwi r0,r0,5`).
-                    register int jq asm("r0") = j / 8;
+                    register int jq REG_PIN("r0") = j / 8;
                     jx = (i / 4) << 5;
                     mx = p->nx;
                     // COMPILER-DIFF: candidate (sched1 slot fillers). Three codeless frame stores of `v` (dead after the
@@ -1227,4 +1231,4 @@ int Espgen42_SetFreeWork(EspgenWork* pGen, EspGenWork* pSeq, EspSeqData* pSeqHed
     return 0;
 }
 
-asm(".section .sdata; .balign 8");
+ASM_ANCHOR(".section .sdata; .balign 8");

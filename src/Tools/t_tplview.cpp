@@ -83,9 +83,11 @@ struct TplMenu3 {
 struct TplMenu2 {
     const char* s[2];
 };
+#ifndef RE4_PORT  // local-label names for the three tables (the port keeps them as plain globals)
 extern const TplMenu3 tplMainMenu asm(".L_tplMainMenu");
 extern const TplMenu2 tplSizeMenu asm(".L_tplSizeMenu");
 extern const TplMenu2 tplWhMenu asm(".L_tplWhMenu");
+#endif
 const TplMenu3 tplMainMenu = {{"FiLE", "SiZE", "QUiT"}};
 const TplMenu2 tplSizeMenu = {{"WxH", "ORG"}};
 const TplMenu2 tplWhMenu = {{"FullScrn", "Texture"}};
@@ -338,4 +340,4 @@ void TplViewer()
     }
 }
 
-asm(".section .data; .balign 8");
+ASM_ANCHOR(".section .data; .balign 8");

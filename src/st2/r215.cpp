@@ -35,7 +35,11 @@ extern "C" void Evt_R215S02_Func(Event* e);
 
 
 // The rooms call Event::FlgOnStatus out of line (event.h has it in-class).
+#ifndef RE4_PORT
 void EvtFlgOnStatus(Event* e, u32 no) asm("FlgOnStatus__5EventUl");
+#else
+#define EvtFlgOnStatus(e, no) (e)->FlgOnStatus(no)
+#endif
 
 
 // Light kind mask / display flag of an event model.

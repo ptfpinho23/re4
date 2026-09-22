@@ -851,4 +851,4 @@ static void r207_StrCheck()
 }
 
 // The next unit's .data is 8-aligned: the split object carries the 4 bytes of padding.
-asm(".section .data; .balign 8");
+ASM_ANCHOR(".section .data; .balign 8");

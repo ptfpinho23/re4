@@ -745,6 +745,7 @@ static const char* tSceAtTargetName[16] = {"",              "PL",            "  
 // cse1 carries the earlier high pseudo along the AROUND/taken paths into them and gcse then
 // copy-propagates the PRE reg into every later site of the case; the original kept them as
 // separate occurrences.  Distinct SYMBOL_REFs for the same object keep them apart.
+#ifndef RE4_PORT
 extern SceAtWorkPtr sceAtCur_m5 asm("sceAtCur"); // COMPILER-DIFF: #12 (cse path / PRE copy)
 extern SceAtWorkPtr sceAtCur_c0 asm("sceAtCur"); // COMPILER-DIFF: #12 (cse path / PRE copy)
 extern SceAtWorkPtr sceAtCur_c1 asm("sceAtCur"); // COMPILER-DIFF: #12 (cse path / PRE copy)
@@ -754,6 +755,17 @@ extern SceAtWorkPtr sceAtCur_c4 asm("sceAtCur"); // COMPILER-DIFF: #12 (cse path
 extern SceAtWorkPtr sceAtCur_c5 asm("sceAtCur"); // COMPILER-DIFF: #12 (cse path / PRE copy)
 extern SceAtWorkPtr sceAtCur_c6 asm("sceAtCur"); // COMPILER-DIFF: #12 (cse path / PRE copy)
 extern SceAtWorkPtr sceAtCur_c7 asm("sceAtCur"); // COMPILER-DIFF: #12 (cse path / PRE copy)
+#else
+#define sceAtCur_m5 (*(SceAtWorkPtr*) &sceAtCur)
+#define sceAtCur_c0 (*(SceAtWorkPtr*) &sceAtCur)
+#define sceAtCur_c1 (*(SceAtWorkPtr*) &sceAtCur)
+#define sceAtCur_c2 (*(SceAtWorkPtr*) &sceAtCur)
+#define sceAtCur_c3 (*(SceAtWorkPtr*) &sceAtCur)
+#define sceAtCur_c4 (*(SceAtWorkPtr*) &sceAtCur)
+#define sceAtCur_c5 (*(SceAtWorkPtr*) &sceAtCur)
+#define sceAtCur_c6 (*(SceAtWorkPtr*) &sceAtCur)
+#define sceAtCur_c7 (*(SceAtWorkPtr*) &sceAtCur)
+#endif
 #define PC(n) (sceAtCur_##n.p)
 // The eight rows every type shares (ID = type, HIT TYPE, HIT ANGLE, OPEN ANGLE, TRIGGER_TYPE,
 // ACTION TYPE, TARGET TYPE, PRIORITY): `sel` is the row under the cursor; left/right (sub stick)

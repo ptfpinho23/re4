@@ -1603,7 +1603,7 @@ void Snd_test_disp_basic(SndTestWork* w)
 {
     // The original passes a stale r3 to the 2nd/3rd call (no `mr r3,r31` reload): the argument
     // was a hard-register variable, which GCC 2.95 does not restore after a call.
-    register SndTestWork* p asm("r3") = w;
+    register SndTestWork* p REG_PIN("r3") = w;
 
     if (w->dispFlag & 2) {
         Snd_test_disp_voice(p);

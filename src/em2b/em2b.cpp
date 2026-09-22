@@ -52,7 +52,7 @@ int GetWepDmVal(cEm* em, u32 wep_no, int near);   // em10.h (not included: it pu
 
 // The module's 0x34-byte COMMON block: uninitialised template statics of the original object,
 // merged into .bss by the REL link.
-asm(".comm common_em2b,52,4");
+ASM_ANCHOR(".comm common_em2b,52,4");
 
 
 static void em2b_R0_Init(cEm2b* em);
@@ -173,7 +173,7 @@ static inline void em2bAtkEndSet(cEm2b* em, Em2bWork* w)
     // COMPILER-DIFF: #13 -- the original never allocates the single-use `w->Dog_wait` load (a REG_EQUIV
     // mem pseudo): reload materialises it in r11, so the global `flags`/`atkHit` pseudos take r0/r9;
     // ours local-allocates the load to r0 first.
-    register int x63c asm("r11");
+    register int x63c REG_PIN("r11");
 
     if (w->pFriend && w->Atk_ck) {
         w->Be_flg |= 0x80;
@@ -203,7 +203,7 @@ static inline void em2bAtkEndSet(cEm2b* em, Em2bWork* w)
 // cross-jumps the arms' tails: 35 words; the plain form swaps the `mr`/`stw` pair: 2 words).
 static inline void em2bAtkEndSetL(cEm2b* em, Em2bWork* w)
 {
-    register int x63c asm("r11"); // COMPILER-DIFF: #13 (see em2bAtkEndSet)
+    register int x63c REG_PIN("r11"); // COMPILER-DIFF: #13 (see em2bAtkEndSet)
 
     if (w->pFriend && w->Atk_ck) {
         w->Be_flg |= 0x80;
@@ -376,7 +376,7 @@ CLOTH_AT_SET em2b_chain_at2[5] = {
     { 0, 0x12, 0x12, 1.0f, 650.0f, { 0.0f, 0.0f, 150.0f }, { 0.0f, 0.0f, 150.0f } },
     { 0, 0x16, 0x16, 1.0f, 650.0f, { 0.0f, 0.0f, 150.0f }, { 0.0f, 0.0f, 150.0f } },
 };
-asm(".section .data\n\t.balign 8\n\t.text");
+ASM_ANCHOR(".section .data\n\t.balign 8\n\t.text");
 
 // Module entry (SN loader): registers Em2bInit as the DOL's enemy constructor (EmInitFunc).
 extern "C" void _prolog()
@@ -860,7 +860,7 @@ static void em2b_R0_Init(cEm2b* em)
     // pseudos are kept alive past the block by a dead asm whose output is pinned to r7 (any pseudo
     // output lands in r8 and perturbs the init2 argument order).
     int r11c;
-    register int dmy7 asm("r7");
+    register int dmy7 REG_PIN("r7");
     Vec v;
 
     switch (em->type) {

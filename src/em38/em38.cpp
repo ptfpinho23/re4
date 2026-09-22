@@ -39,7 +39,7 @@
 
 // The module's 0x34-byte COMMON block: uninitialised template statics of the original object,
 // merged into .bss by the REL link.
-asm(".comm common_em38,52,4");
+ASM_ANCHOR(".comm common_em38,52,4");
 
 
 // game/em_dm_val.cpp (declared in em10.h, which is not included here: emwep.h's extern "C" plemBackjump would
@@ -1856,7 +1856,7 @@ void em38BirthParasite(cEm38* em)
 // Debug switch: the shell motion stays off while set.
 static int em38_shell_off = 0;
 // The original link 8-aligns the end of .data (the ngcld BSS tag follows): the 4 pad bytes after it.
-asm(".section .data\n\t.balign 8\n\t.text");
+ASM_ANCHOR(".section .data\n\t.balign 8\n\t.text");
 
 // The shell on the body's back (a second motion work) opens when the body is hurt.
 void em38ShellControl(cEm38* em)

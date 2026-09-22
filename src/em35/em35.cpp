@@ -41,7 +41,7 @@
 #include "em10.h"
 #include "em_mod.h"
 
-asm(".comm common_em35,52,4");
+ASM_ANCHOR(".comm common_em35,52,4");
 
 
 typedef void (*Em35Func)(cEm35*);

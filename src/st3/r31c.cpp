@@ -172,7 +172,11 @@ static inline void SetPosAngY(cModel* m, f32 x, f32 y, f32 z, f32 ry)
 }
 
 // The rooms call Event::FlgOnStatus out of line (event.h has it in-class).
+#ifndef RE4_PORT
 void EvtFlgOnStatus(Event* e, u32 no) asm("FlgOnStatus__5EventUl");
+#else
+#define EvtFlgOnStatus(e, no) (e)->FlgOnStatus(no)
+#endif
 
 static void r31c_CrestUseCheck();
 void r31c_SetCrest(u32 no);

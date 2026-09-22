@@ -43,7 +43,7 @@
 #include <dolphin/os.h>
 #include "em_mod.h"
 
-asm(".comm common_em36,52,4");
+ASM_ANCHOR(".comm common_em36,52,4");
 
 
 typedef void (*Em36Func)(cEm36*);
@@ -4219,7 +4219,7 @@ void em36SetHitMark(cEm36* em, int big)
     EspSeqData* seq;
     // The original zero-extends the u8 once (`clrlwi r30`) before both calls; a hard-register QImode variable
     // keeps the extension (combine drops it for a pseudo whose sets are the constants 3/4).
-    register u8 kind asm("r30"); // COMPILER-DIFF: #2
+    register u8 kind REG_PIN("r30"); // COMPILER-DIFF: #2
     u32 i;
     f32 len;
 

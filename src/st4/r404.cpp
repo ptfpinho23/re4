@@ -56,7 +56,7 @@ static R404Work* r404_work;
 
 static u32 r404_seFrame = 80;
 // The split object's .data is 8-aligned (4 -> 8 bytes).
-asm(".section .data\n\t.balign 8\n\t.text");
+ASM_ANCHOR(".section .data\n\t.balign 8\n\t.text");
 
 // The room's MercSysInitRoom parameters are 0x6C bytes (the DOL reads the first 0x5C).
 struct R404MercInit {

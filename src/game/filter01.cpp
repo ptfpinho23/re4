@@ -359,4 +359,4 @@ void Filter01SetParam(int mode, int z, u8 type, f32 level)
 }
 
 // The next unit's .sdata (filter06: 32-byte aligned vfilter tables) starts 32-byte aligned.
-asm(".section .sdata,\"aw\"\n\t.balign 32\n\t.text");
+ASM_ANCHOR(".section .sdata,\"aw\"\n\t.balign 32\n\t.text");

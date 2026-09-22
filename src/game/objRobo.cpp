@@ -536,7 +536,7 @@ void cObjRobo::TaskSwitchFront(cObjRobo* pObj)
     cModel* parts;
     int i;
     int j;
-    register f32 to asm("fr28");  // COMPILER-DIFF: #17 (FPR value pin): a hard-register `to` keeps the for-init copy `range = to` out of gcse's copy propagation
+    register f32 to REG_PIN("fr28");  // COMPILER-DIFF: #17 (FPR value pin): a hard-register `to` keeps the for-init copy `range = to` out of gcse's copy propagation
     to = -1.483529806137085f;
     f32 from = 0.0f;
     f32 max;
@@ -588,7 +588,7 @@ void cObjRobo::TaskSwitchBack(cObjRobo* pObj)
     cModel* parts;
     int i;
     int j;
-    register f32 to asm("fr28");  // COMPILER-DIFF: #17 (FPR value pin): a hard-register `to` keeps the for-init copy `range = to` out of gcse's copy propagation
+    register f32 to REG_PIN("fr28");  // COMPILER-DIFF: #17 (FPR value pin): a hard-register `to` keeps the for-init copy `range = to` out of gcse's copy propagation
     to = -1.483529806137085f;
     f32 from = 0.0f;
     f32 max;

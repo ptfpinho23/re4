@@ -42,7 +42,7 @@ void* GetDataExt(void* arc, const char* tag, int no);
 
 
 #define SND_FILE "D:/Bio4/Prog/snd.cpp"
-#define SND_DATA_TOP 0x80370000
+#define SND_DATA_TOP ((u32) GC_ADDR(0x80370000))
 #define LOOP_IDX(x, max) ((x) < 0 ? (max) : ((x) > (max) ? 0 : (x)))
 
 SndWork Snd;
@@ -2817,4 +2817,4 @@ void SndSeqFadeOutAll_sec(u8 type, int time)
 }
 
 // The split object's .sdata is 8-aligned (0x18 bytes: the u8 flag_bak is followed by 7 bytes of pad).
-asm(".section .sdata; .balign 8");
+ASM_ANCHOR(".section .sdata; .balign 8");

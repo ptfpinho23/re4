@@ -81,7 +81,7 @@ f32 pzlGrid::size;
 // The module's 0x34-byte COMMON block (make_rel appends the COMMON symbols after .bss): pzlGrid::size
 // is its first word, the other 0x30 bytes are the unnamed template statics the original objects
 // carried; the second .comm of the same name widens the symbol to the block size.
-asm(".comm _7pzlGrid.size,52,4");
+ASM_ANCHOR(".comm _7pzlGrid.size,52,4");
 
 // Cursor frame: the four corner vertices of the cell run under the cursor (drawCursor).
 struct PzzlCursor {
@@ -336,7 +336,7 @@ void pzzlCursorDisp(SUB_SCREEN* wk, int sw)
             // load outranks the copy (load latency 2) and gives case 2's `lwz r0; mr r30,r3; mr r3,r0`
             // in both arms. The r3 pin makes the load's destination the hard register: its
             // anti-dependence on the `col` copy (which reads r3) orders it after the copy.
-            register pzlPlayer* pl asm("r3");
+            register pzlPlayer* pl REG_PIN("r3");
             pl = wk->puzzlePlayer;
             p = pl->ptrPiece(pl->m_p_active_board);
         }

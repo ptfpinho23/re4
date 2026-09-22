@@ -668,6 +668,7 @@ f32 SQRTF(f32 x)
     if (x <= 0.00001f) {
         return 0.0f;
     }
+#ifndef RE4_PORT
     asm("frsqrte 2, %1\n\t"
         "fmuls 3, 2, 2\n\t"
         "fmuls 4, 2, %2\n\t"
@@ -677,6 +678,11 @@ f32 SQRTF(f32 x)
         : "=f"(r)
         : "f"(x), "f"(half), "f"(three)
         : "fr2", "fr3", "fr4");
+#else
+    (void) half;
+    (void) three;
+    r = sqrtf(x);
+#endif
     return r;
 }
 
@@ -724,6 +730,7 @@ f32 SINF(f32 x)
     f32 r;
 
     x = LIMIT_ANGLE(x);
+#ifndef RE4_PORT
     asm volatile(
         "lis 9, Coeff@ha\n\t"
         "li 10, powx@sda21\n\t"
@@ -752,6 +759,21 @@ f32 SINF(f32 x)
         : "=f"(r)
         : "f"(x)
         : "r9", "r10", "r11", "fr2", "fr3", "fr4", "fr5");
+#else
+    // The paired-single series in C: Coeff[2k] * x^(2k+1) + Coeff[2k+1] * x^(2k+2), k = 0..4.
+    {
+        f32 p = x * powx[0];
+        f32 s = sum[0] + sum[1];
+        int k;
+        for (k = 0; k < 5; k++) {
+            s += Coeff[2 * k] * p;
+            p *= x;
+            s += Coeff[2 * k + 1] * p;
+            p *= x;
+        }
+        r = s;
+    }
+#endif
     return r;
 }
 
@@ -761,6 +783,7 @@ f32 COSF(f32 x)
     f32 r;
 
     x = LIMIT_ANGLE(x + 1.5707964f);
+#ifndef RE4_PORT
     asm volatile(
         "lis 9, Coeff@ha\n\t"
         "li 10, powx@sda21\n\t"
@@ -789,6 +812,21 @@ f32 COSF(f32 x)
         : "=f"(r)
         : "f"(x)
         : "r9", "r10", "r11", "fr2", "fr3", "fr4", "fr5");
+#else
+    // The paired-single series in C: Coeff[2k] * x^(2k+1) + Coeff[2k+1] * x^(2k+2), k = 0..4.
+    {
+        f32 p = x * powx[0];
+        f32 s = sum[0] + sum[1];
+        int k;
+        for (k = 0; k < 5; k++) {
+            s += Coeff[2 * k] * p;
+            p *= x;
+            s += Coeff[2 * k + 1] * p;
+            p *= x;
+        }
+        r = s;
+    }
+#endif
     return r;
 }
 
@@ -799,6 +837,7 @@ f32 LIMIT_ANGLE(f32 x)
     f32 max = PI;
     f32 step = PI2;
 
+#ifndef RE4_PORT
     asm("fcmpu 0, %0, %2\n\t"
         "blt 1f\n"
         "0:\n\t"
@@ -817,5 +856,16 @@ f32 LIMIT_ANGLE(f32 x)
         : "+f"(x)
         : "f"(min), "f"(max), "f"(step)
         : "cr0");
+#else
+    if (x >= max) {
+        do {
+            x -= step;
+        } while (x >= max);
+    } else {
+        while (x < min) {
+            x += step;
+        }
+    }
+#endif
     return x;
 }

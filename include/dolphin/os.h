@@ -77,8 +77,13 @@ u8 __gUnknown800030E3 AT_ADDRESS(OS_BASE_CACHED | 0x30E3);
 #define __OSCoreClock (*(u32 *)(OS_BASE_CACHED | 0x00FC))
 #endif
 
+#ifndef RE4_PORT
 #define OS_BUS_CLOCK   __OSBusClock
 #define OS_CORE_CLOCK  __OSCoreClock
+#else
+#define OS_BUS_CLOCK   162000000u  // the port has no low-memory word to read; the retail clocks
+#define OS_CORE_CLOCK  486000000u
+#endif
 #define OS_TIMER_CLOCK (OS_BUS_CLOCK/4)
 
 #define OSTicksToSeconds(ticks)      ((ticks)   / (OS_TIMER_CLOCK))
