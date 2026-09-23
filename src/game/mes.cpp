@@ -188,18 +188,18 @@ void MessageFont::create(int char_w, int char_h, TEXPalette* addr, u8* size)
     FONT_TEX* t;
 
     m_tpl = addr;
-    if ((s32) addr->descriptorArray >= 0) {
-        addr->descriptorArray = (TEXDescriptor*) ((u32) addr->descriptorArray + (u32) addr);
+    if (NOT_RELOCATED(addr->descriptorArray)) {
+        addr->descriptorArray = (TEXDescriptor*) (FILE_U32(addr->descriptorArray) + (u32) addr);
         d = addr->descriptorArray;
         for (i = 0; i < addr->numDescriptors; i++, d++) {
-            d->textureHeader = (TEXHeader*) ((u8*) addr + (u32) d->textureHeader);
-            d->CLUTHeader = (CLUTHeader*) ((u8*) addr + (u32) d->CLUTHeader);
+            d->textureHeader = (TEXHeader*) ((u8*) addr + FILE_U32(d->textureHeader));
+            d->CLUTHeader = (CLUTHeader*) ((u8*) addr + FILE_U32(d->CLUTHeader));
             if (d->textureHeader->unpacked == 0) {
-                d->textureHeader->data = (u8*) addr + (u32) d->textureHeader->data;
+                d->textureHeader->data = (u8*) addr + FILE_U32(d->textureHeader->data);
                 d->textureHeader->unpacked = 1;
             }
             if (d->CLUTHeader->unpacked == 0) {
-                d->CLUTHeader->data = (u8*) addr + (u32) d->CLUTHeader->data;
+                d->CLUTHeader->data = (u8*) addr + FILE_U32(d->CLUTHeader->data);
                 d->CLUTHeader->unpacked = 1;
             }
         }

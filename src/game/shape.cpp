@@ -186,8 +186,9 @@ struct ShapeEntry {
 #else
 // GQR5 is s16 with scale 0: plain conversions (the store saturates like psq_st).
 static inline s16 portQuantS16(f32 v) { return v > 32767.0f ? 32767 : v < -32768.0f ? -32768 : (s16) v; }
-#define PSQ_L_S16(p) ((f32) *(const s16*) (p))
-#define PSQ_ST_S16(f, p) (*(s16*) (p) = portQuantS16(f))
+// The vertex buffers keep the disc's big-endian s16 (the GX layer reads them that way).
+#define PSQ_L_S16(p) ((f32) (s16) __builtin_bswap16(*(const u16*) (p)))
+#define PSQ_ST_S16(f, p) (*(u16*) (p) = __builtin_bswap16((u16) portQuantS16(f)))
 #endif
 
 // Applies shape `data` at frame `rate` to the vertex buffer `dst`: for every channel flagged 4 the

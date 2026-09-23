@@ -107,7 +107,7 @@ void SndInit()
     str_flag = Dvd.ReadCheck(r, &len, 0, 0) > 0;
     adr = SND_DATA_TOP + ALIGN32(len);
     for (i = 0; i < 2; i++) {
-        SndMem.str_file[i] = (SndStrFile*) (SND_DATA_TOP + ((u32*) SND_DATA_TOP)[i]);
+        SndMem.str_file[i] = (SndStrFile*) (SND_DATA_TOP + FILE_U32(((u32*) SND_DATA_TOP)[i]));
         Snd_str_blk_init(i, SndMem.str_file[i]);
     }
 
@@ -181,11 +181,11 @@ void SndBgmTblInit()
     int i = 0;
     int j;
 
-    while (*rl != 0xFFFF) {
-        SndRoomSave* rs = (SndRoomSave*) RoomData.getRoomSavePtr(*rl);
+    while (FILE_U16(*rl) != 0xFFFF) {
+        SndRoomSave* rs = (SndRoomSave*) RoomData.getRoomSavePtr(FILE_U16(*rl));
         if (rs != NULL) {
             u32* ofs = (u32*) ((u8*) SndMem.bgm_tbl + SndMem.bgm_tbl->room_ofs);
-            SndBgmRoom* room = (SndBgmRoom*) ((u8*) ofs + ofs[i]);
+            SndBgmRoom* room = (SndBgmRoom*) ((u8*) ofs + FILE_U32(ofs[i]));
             for (j = 0; j < 6; j++) {
                 rs->bgm[j] = room->e[0].bgm[j];
                 rs->str[j] = room->e[0].str[j];
@@ -1689,7 +1689,7 @@ struct SndDoorSe {
 int SndDoorSeLoad()
 {
     u32 i;
-    u16 cnt = *(u16*) ((u8*) SndMem.door_tbl + SndMem.door_tbl->num_ofs);
+    u16 cnt = FILE_U16(*(u16*) ((u8*) SndMem.door_tbl + SndMem.door_tbl->num_ofs));
     u32 no = 0xFFFF;
     int ret = -1;
     SndDoorSe* d;
@@ -1707,7 +1707,7 @@ int SndDoorSeLoad()
         }
         if (no < cnt && no != pSnd->doorse_id) {
 #line 2389 SND_FILE
-            ret = DvdRead(0x69, 0, 0, ((u32*) ((u8*) SndMem.door_tbl + SndMem.door_tbl->file_ofs))[no], 0, 0x8000, __FILE__, __LINE__);
+            ret = DvdRead(0x69, 0, 0, FILE_U32(((u32*) ((u8*) SndMem.door_tbl + SndMem.door_tbl->file_ofs))[no]), 0, 0x8000, __FILE__, __LINE__);
             pSnd->doorse_id = no;
         } else if (no != 0xFFFF) {
             SND_BIT_SET(pSnd->blk_flag, 7);
@@ -2321,9 +2321,9 @@ int SndBgmTblSet(u16 room_no, int tbl_no)
         rl = (u16*) ((u8*) SndMem.bgm_tbl + SndMem.bgm_tbl->list_ofs);
         i = 0;
         // no block-scope declaration inside the body: that would stop GCC duplicating the exit test
-        while (*rl != 0xFFFF) {
-            if (*rl == room_no) {
-                r = (SndBgmRoom*) ((u8*) SndMem.bgm_tbl + SndMem.bgm_tbl->room_ofs + ((u32*) ((u8*) SndMem.bgm_tbl + SndMem.bgm_tbl->room_ofs))[i]);
+        while (FILE_U16(*rl) != 0xFFFF) {
+            if (FILE_U16(*rl) == room_no) {
+                r = (SndBgmRoom*) ((u8*) SndMem.bgm_tbl + SndMem.bgm_tbl->room_ofs + FILE_U32(((u32*) ((u8*) SndMem.bgm_tbl + SndMem.bgm_tbl->room_ofs))[i]));
                 break;
             }
             rl++;

@@ -57,8 +57,10 @@ int g_proc_cnt;
 // Low memory globals (OSPhysicalToCached(0x00F8) = bus clock); a struct member so the address splits
 // into `lis 0x8000` + displacement. Replaces the SDK macro of the same name (dvd.cpp / main_sub.cpp
 // too; each unit's override has to follow its own <dolphin/os.h>, so it is not in a header).
+#ifndef RE4_PORT  // the port keeps os.h's constant: there is no low-memory word
 #undef OS_BUS_CLOCK
 #define OS_BUS_CLOCK (((OSLowMem*) 0x80000000)->busClock)
+#endif
 struct OSLowMem {
     u8 pad_0[0xF8];
     u32 busClock;   // 0xF8
@@ -149,7 +151,7 @@ void processBarDisp()
     // stands in for it (its read below folds back to `li 0`, no code).
     s16 zz = 0;
     // clk's `lis 0x8000` (a block-0 filler at sched1) follows the zero's `li` in the target: LUID order.
-    clk = (OSLowMem*) 0x80000000;
+    clk = (OSLowMem*) GC_LOWMEM;
     t->code = 4;
     t->x0 = 6;
     t->y0 = 30;

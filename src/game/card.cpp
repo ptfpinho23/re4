@@ -3064,20 +3064,20 @@ void cCard::calcTplAddr(TEXPalette* tpl)
     u32 i;
     TEXDescriptor* desc;
 
-    if ((s32) tpl->descriptorArray < 0) {
+    if (IS_RELOCATED(tpl->descriptorArray)) {
         return;
     }
-    tpl->descriptorArray = (TEXDescriptor*) ((u32) tpl->descriptorArray + (u32) tpl);
+    tpl->descriptorArray = (TEXDescriptor*) (FILE_U32(tpl->descriptorArray) + (u32) tpl);
     desc = tpl->descriptorArray;
     for (i = 0; i < tpl->numDescriptors; i++, desc++) {
-        desc->textureHeader = (TEXHeader*) ((u8*) tpl + (u32) desc->textureHeader);
-        desc->CLUTHeader = (CLUTHeader*) ((u8*) tpl + (u32) desc->CLUTHeader);
+        desc->textureHeader = (TEXHeader*) ((u8*) tpl + FILE_U32(desc->textureHeader));
+        desc->CLUTHeader = (CLUTHeader*) ((u8*) tpl + FILE_U32(desc->CLUTHeader));
         if (desc->textureHeader->unpacked == 0) {
-            desc->textureHeader->data = (u8*) tpl + (u32) desc->textureHeader->data;
+            desc->textureHeader->data = (u8*) tpl + FILE_U32(desc->textureHeader->data);
             desc->textureHeader->unpacked = 1;
         }
         if (desc->CLUTHeader->unpacked == 0) {
-            desc->CLUTHeader->data = (u8*) tpl + (u32) desc->CLUTHeader->data;
+            desc->CLUTHeader->data = (u8*) tpl + FILE_U32(desc->CLUTHeader->data);
             desc->CLUTHeader->unpacked = 1;
         }
     }

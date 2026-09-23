@@ -29,7 +29,11 @@ extern u8 max_lod;
 extern f32 lod_bias;
 
 // pointer to game memory (0x80000000 .. 0x82FFFFFF)
+#ifndef RE4_PORT
 #define IN_RANGE(p) ((u32) (p) - 0x80000000 <= 0x02FFFFFF)
+#else
+#define IN_RANGE(p) GC_PTR_OK(p)
+#endif
 #define IS_ALIVE(p) (((p)->be_flag & 0x201) == 1)
 
 void funcDelCtrl(cCtrl* pCtr);

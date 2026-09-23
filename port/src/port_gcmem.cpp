@@ -6,3 +6,11 @@
 
 unsigned char port_gcmem[GC_ARENA_END - GC_ARENA_START] __attribute__((aligned(64)));
 unsigned char port_devmem[GC_DEV_SIZE] __attribute__((aligned(64)));
+
+// The OS low-memory block: the game reads the bus clock word at +0xF8 for its timing displays.
+unsigned char port_lowmem[0x100] __attribute__((aligned(16)));
+__attribute__((constructor)) static void port_lowmem_init(void)
+{
+    unsigned long clock = 162000000ul;
+    __builtin_memcpy(port_lowmem + 0xF8, &clock, 4);
+}

@@ -2625,18 +2625,22 @@ static inline s8 quantS8(f32 v)
     return (s8) v;
 }
 
+// The vertex data is the disc's, big-endian s16 in and out (the GX layer reads it that way).
+static inline s16 ldBE(const s16* p) { return (s16) __builtin_bswap16(*(const u16*) p); }
+static inline void stBE(s16* p, s16 v) { *(u16*) p = __builtin_bswap16((u16) v); }
+
 void CalcSk1_x(void* dst, void* src, u32 n)
 {
     const s16* s = (const s16*) src;
     s16* d = (s16*) dst;
     u32 i;
     for (i = 0; i < n; i++, s += 4, d += 3) {
-        const f32* m = (const f32*) (LC_BASE + s[3] * 0x30);
+        const f32* m = (const f32*) (LC_BASE + ldBE(&s[3]) * 0x30);
         f32 out[3];
-        skinOne(m, s[0] * gqr6_ld_mul, s[1] * gqr6_ld_mul, s[2] * gqr6_ld_mul, out);
-        d[0] = quantS16(out[0]);
-        d[1] = quantS16(out[1]);
-        d[2] = quantS16(out[2]);
+        skinOne(m, ldBE(&s[0]) * gqr6_ld_mul, ldBE(&s[1]) * gqr6_ld_mul, ldBE(&s[2]) * gqr6_ld_mul, out);
+        stBE(&d[0], quantS16(out[0]));
+        stBE(&d[1], quantS16(out[1]));
+        stBE(&d[2], quantS16(out[2]));
     }
 }
 
@@ -2670,17 +2674,17 @@ void CalcTplAddrC8(TEXPalette* tpl)
     if (tpl == 0) {
         return;
     }
-    if ((s32) tpl->descriptorArray < 0) {
+    if (IS_RELOCATED(tpl->descriptorArray)) {
         return;
     }
-    tpl->descriptorArray = (TEXDescriptor*) ((u32) tpl->descriptorArray + (u32) tpl);
+    tpl->descriptorArray = (TEXDescriptor*) (FILE_U32(tpl->descriptorArray) + (u32) tpl);
     for (i = 0; i < tpl->numDescriptors; i++) {
         TEXDescriptor* td = &tpl->descriptorArray[i];
-        td->textureHeader = (TEXHeader*) ((u32) tpl + (u32) td->textureHeader);
-        td->textureHeader->data = (void*) ((u32) tpl + (u32) td->textureHeader->data);
+        td->textureHeader = (TEXHeader*) ((u32) tpl + FILE_U32(td->textureHeader));
+        td->textureHeader->data = (void*) ((u32) tpl + FILE_U32(td->textureHeader->data));
         if (td->CLUTHeader != 0) {
-            td->CLUTHeader = (CLUTHeader*) ((u32) tpl + (u32) td->CLUTHeader);
-            td->CLUTHeader->data = (void*) ((u32) tpl + (u32) td->CLUTHeader->data);
+            td->CLUTHeader = (CLUTHeader*) ((u32) tpl + FILE_U32(td->CLUTHeader));
+            td->CLUTHeader->data = (void*) ((u32) tpl + FILE_U32(td->CLUTHeader->data));
         }
     }
 }

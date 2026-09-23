@@ -109,7 +109,10 @@ def main():
         out2 = a.out / f"{name}.2.o"
         run([ld, "-r", *[f"--defsym={s}=re4_{name}_unresolved" for s in sorted(trap[name])], str(out1), "-o", str(out2)])
         final = a.out / f"{name}.mod.o"
-        run([objcopy, "-w", "-G", f"re4_{name}_*", *[f"--keep-global-symbol={s}" for s in sorted(keep[name])], str(out2), str(final)])
+        # -R .group: the COMDAT groups of inline functions, templates and vtables would be merged
+        # across modules by the final link and all but one copy dropped; without their group
+        # sections every module keeps its own (now local) copy.
+        run([objcopy, "-w", "-R", ".group", "-G", f"re4_{name}_*", *[f"--keep-global-symbol={s}" for s in sorted(keep[name])], str(out2), str(final)])
         rel = json.load(open(ROOT / "config" / "G4BE08" / "modules" / name / "rel.json"))
         registry.append((rel["module_id"], name, len(trap[name])))
         os.unlink(out1)

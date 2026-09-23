@@ -71,7 +71,29 @@ typedef union {
 // constant address (`(*(volatile WGPipe*)0xCC008000)` or a struct member at 0xCC000000)
 // reorders those loads. Declared as an incomplete array because an 8-byte extern object
 // would be placed in small data (`@sda21`).
+#ifndef RE4_PORT
 extern volatile WGPipe GXWGFifo[];
+#else
+// The port: every store into the pipe is a call into port/src/port_gx.cpp's vertex assembler.
+typedef u8 pgx_u8; typedef u16 pgx_u16; typedef u32 pgx_u32; typedef s8 pgx_s8; typedef s16 pgx_s16; typedef s32 pgx_s32; typedef f32 pgx_f32;
+extern "C" void port_gx_put_u8(pgx_u8 v);
+extern "C" void port_gx_put_u16(pgx_u16 v);
+extern "C" void port_gx_put_u32(pgx_u32 v);
+extern "C" void port_gx_put_s8(pgx_s8 v);
+extern "C" void port_gx_put_s16(pgx_s16 v);
+extern "C" void port_gx_put_f32(pgx_f32 v);
+struct PortWGPipe {
+    struct { void operator=(pgx_u8 v) const { port_gx_put_u8(v); } } u8;
+    struct { void operator=(pgx_u16 v) const { port_gx_put_u16(v); } } u16;
+    struct { void operator=(pgx_u32 v) const { port_gx_put_u32(v); } } u32;
+    struct { void operator=(pgx_s8 v) const { port_gx_put_s8(v); } } s8;
+    struct { void operator=(pgx_s16 v) const { port_gx_put_s16(v); } } s16;
+    struct { void operator=(pgx_s32 v) const { port_gx_put_u32((pgx_u32) v); } } s32;
+    struct { void operator=(pgx_f32 v) const { port_gx_put_f32(v); } } f32;
+};
+extern PortWGPipe port_wgpipe;
+#define GXWGFifo (&port_wgpipe)
+#endif
 
 static inline void GXPosition3f32(f32 x, f32 y, f32 z)
 {

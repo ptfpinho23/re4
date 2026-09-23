@@ -823,7 +823,7 @@ void init_corn()
 #ifndef RE4_PORT
 #define PSQ_L_S16(p) ({ f32 f_; asm volatile("psq_l %0,0(%1),1,5" : "=f"(f_) : "b"(p)); f_; })
 #else
-#define PSQ_L_S16(p) ((f32) *(const s16*) (p))  // GQR5: s16, scale 0
+#define PSQ_L_S16(p) ((f32) (s16) __builtin_bswap16(*(const u16*) (p)))  // GQR5: s16, scale 0; big-endian vertex data
 #endif
 
 

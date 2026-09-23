@@ -19,4 +19,6 @@ typedef int BOOL;
 #define NULL 0
 #endif
 
+#include "port_be.h"
+
 #endif

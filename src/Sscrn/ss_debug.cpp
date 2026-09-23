@@ -427,7 +427,7 @@ int cManager<T>::dispWorkNum(int x, int y, int col, int sub)
     u32 n;
     u32 i;
 
-    if ((u32) pArray < 0x80000000 || (u32) pArray > 0x82FFFFFF) {
+    if (GC_PTR_BAD(pArray)) {
         return 0;
     }
     n = 0;

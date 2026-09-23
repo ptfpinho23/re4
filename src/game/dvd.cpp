@@ -309,12 +309,14 @@ struct OSLowMem {
     u8 pad_0[0xF8];
     u32 busClock;  // 0xF8
 };
+#ifndef RE4_PORT  // the port keeps os.h's constant: there is no low-memory word
 #undef OS_BUS_CLOCK
 #undef OS_TIMER_CLOCK
 #undef OSTicksToMilliseconds
 #define OS_BUS_CLOCK (((OSLowMem*) 0x80000000)->busClock)
 #define OS_TIMER_CLOCK (OS_BUS_CLOCK / 4)
 #define OSTicksToMilliseconds(ticks) ((ticks) / (OS_TIMER_CLOCK / 1000))
+#endif
 
 #include "snd.h"
 #include <stdio.h>

@@ -45,48 +45,48 @@ struct SndCurveSel {
 };
 
 struct SndCurveEnt {
-    f32 dist;        // 0x00
-    u16 x4;
-    u16 val;         // 0x06  read as s16 (pitch), s8 at 0x07 (filter), u8 at 0x07 (volume)
+    be_f32 dist;        // 0x00
+    be_u16 x4;
+    be_u16 val;         // 0x06  read as s16 (pitch), s8 at 0x07 (filter), u8 at 0x07 (volume)
 };
 
 struct SndCurveTbl {
-    u32 num;         // 0x00
-    f32 scale;       // 0x04  applied to every entry's dist at room start
+    be_u32 num;         // 0x00
+    be_f32 scale;       // 0x04  applied to every entry's dist at room start
     SndCurveEnt e[1];// 0x08
 };
 
 // Stream block file (SndMem.str_file[]).
 struct SndStrEnt {
-    u32 x0;
+    be_u32 x0;
     u8 vol;          // 0x04
     u8 pad_5[11];
 };
 struct SndStrFile {
-    u32 num;         // 0x00
-    u32 x4;
-    u32 ent_ofs;     // 0x08  offset to SndStrEnt[num]
+    be_u32 num;         // 0x00
+    be_u32 x4;
+    be_u32 ent_ofs;     // 0x08  offset to SndStrEnt[num]
 };
 
 // Door SE file (SndMem.door_tbl): offsets to a u32 file table and a u16 count.
 struct SndDoorTbl {
-    u32 file_ofs;    // 0x00
-    u32 num_ofs;     // 0x04
+    be_u32 file_ofs;    // 0x00
+    be_u32 num_ofs;     // 0x04
 };
 
 // Room BGM/stream table file (SndMem.bgm_tbl).
 struct SndBgmEnt {
-    u32 id;          // 0x00
-    u32 bgm[6];      // 0x04
-    u32 str[6];      // 0x1C
+    be_u32 id;          // 0x00
+    be_u32 bgm[6];      // 0x04
+    be_u32 str[6];      // 0x1C
 };
 struct SndBgmRoom {
-    u32 num;         // 0x00
+    be_u32 num;         // 0x00
     SndBgmEnt e[1];  // 0x04
 };
 struct SndBgmTbl {
-    u32 room_ofs;    // 0x00  offset to u32 offsets (one per room, relative to that array)
-    u32 list_ofs;    // 0x04  offset to the u16 room id list, 0xFFFF terminated
+    be_u32 room_ofs;    // 0x00  offset to u32 offsets (one per room, relative to that array)
+    be_u32 list_ofs;    // 0x04  offset to the u16 room id list, 0xFFFF terminated
 };
 
 // Room save record bytes used here (cRoomData::getRoomSavePtr).

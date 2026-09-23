@@ -14,9 +14,18 @@ static int screenReady;
 static int gameLinesShown;
 #define GAME_LINES_ON_SCREEN 120
 
+extern "C" int port_gx_active(void);
+extern "C" void port_gx_overlay_line(const char* text);
+
 static void emit(const char* buf, int n, int fromGame)
 {
     sceIoWrite(sceKernelStdout(), buf, n);
+    if (port_gx_active()) {
+        if (!fromGame) {
+            port_gx_overlay_line(buf);
+        }
+        return;
+    }
     if (!screenReady) {
         pspDebugScreenInit();
         screenReady = 1;

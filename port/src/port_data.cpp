@@ -2,7 +2,5 @@
 #include "types.h"
 #include "gx.h"
 
-// The GX write-gather pipe: on the GameCube every store to this address pushed a word into the
-// GP FIFO. The game writes vertices through it in two units (11 sites); the port's GX layer will
-// capture them through a macro. Until then the stores land in this word.
-volatile WGPipe GXWGFifo[1];
+// The GX write-gather pipe as the port's proxy (gx.h): its members call the vertex assembler.
+PortWGPipe port_wgpipe;

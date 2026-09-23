@@ -22,6 +22,9 @@
 #define GC_PTR_GOOD(p) (u32) p >= 0x80000000 && (u32) p <= 0x82FFFFFF
 #define GC_PTR_HIGH(p) (u32) p > 0x82FFFFFF
 #define GC_ADDR_BAD(a) a < 0x80000000 || a > 0x82FFFFFF
+#define GC_PTR_OUT(p) (u32) p - 0x80000000 > 0x02FFFFFF
+#define GC_PTR_LOW(p) (u32) p < 0x80000000
+#define GC_LOWMEM 0x80000000  // the OS low-memory block (bus clock at +0xF8)
 #else
 #define REG_PIN(r)
 #define ASM_ANCHOR(s)
@@ -54,6 +57,10 @@ extern unsigned char port_devmem[];
 #define GC_PTR_GOOD(p) GC_PTR_OK(p)
 #define GC_PTR_HIGH(p) !GC_PTR_OK(p)
 #define GC_ADDR_BAD(a) !GC_PTR_OK(a)
+#define GC_PTR_OUT(p) !GC_PTR_OK(p)
+#define GC_PTR_LOW(p) !GC_PTR_OK(p)
+extern unsigned char port_lowmem[0x100];  // port_gcmem.cpp: the bus clock word at +0xF8
+#define GC_LOWMEM ((unsigned long) port_lowmem)
 #endif
 
 #endif

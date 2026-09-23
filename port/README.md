@@ -79,36 +79,50 @@ directory next to the EBOOT:
 `data/` is the disc's own tree, both discs merged (disc 2 only adds the island stage). Fill it from
 the GameCube images with `tools/port/gamedata.py extract <disc1.iso> build/port/data` and then
 `... extract <disc2.gcm> build/port/data`, and copy `build/port/EBOOT.PBP` plus `build/port/data`
-to `ms0:/PSP/GAME/RE4/`. The extractor is where the asset converters plug in (`CONVERTERS`, per
-path pattern); there are none yet, so the tree still holds big-endian game data and the engine
-misreads it. `port/run-ppsspp.sh` installs the same layout into PPSSPP's memory stick folder
-(`~/.config/ppsspp/PSP/GAME/RE4/`, `data` as a symlink to `build/port/data`) and boots it, so the
-emulator sees exactly what the PSP will.
+to `ms0:/PSP/GAME/RE4/`. `port/run-ppsspp.sh` installs the same layout into PPSSPP's memory stick
+folder (`~/.config/ppsspp/PSP/GAME/RE4/`, `data` as a symlink to `build/port/data`) and boots it,
+so the emulator sees exactly what the PSP will.
+
+The files stay as the disc has them. Big-endian data is handled at run time, not by converters:
+the file-resident structures the engine reads in place get the byte-swapping field types of
+`include/port_be.h` (`be_u32`, `be_u16`, `be_f32`...; plain typedefs in the matching build), the
+loaders' offset-to-pointer relocations read the stored offsets through `FILE_U32` and test
+"already relocated" through `IS_RELOCATED`, mesh data and textures are read big-endian by the GX
+layer itself, and the yz2 archives (`.das`) are decoded by `port/src/port_yz2.cpp`, a C port of
+the assembly decoder (`tools/port/yz2.py` is the same codec in Python with an encoder; its
+self-test round-trips both). `gamedata.py` can also unpack archives to raw form (`yz2.py raw`) to
+skip the decode on the PSP. Converting the structures is done for the core archive table, the
+texture palettes and the sound tables; the rest (models' headers, motion, rooms, effects, items,
+messages...) follows the same pattern as each loader is reached with real data.
 
 Everything the port logs (and the first 120 lines of the game's own output) is also drawn on the
-screen through the pspsdk debug console, since a PSP has no stdout; HOME exits through the usual
-exit callback. Memory: the port keeps the GameCube's 21 MB arena and an 8 MB ARAM buffer as
-static arrays, so it needs a PSP-2000 or later (large memory mode, MEMSIZE=1 in the PARAM.SFO);
-a PSP-1000's 24 MB will not hold it until the map is trimmed.
+screen, since a PSP has no stdout; HOME exits through the usual exit callback. Memory: the port
+keeps the GameCube's 21 MB arena and an 8 MB ARAM buffer as static arrays, so it needs a
+PSP-2000 or later (large memory mode, MEMSIZE=1 in the PARAM.SFO); a PSP-1000's 24 MB will not
+hold it until the map is trimmed.
 
-## State (2026-09-22, night)
+## State (2026-09-23)
 
-All 661 game units compile; the 293 DOL units link into an EBOOT that boots in PPSSPP from the
-memory-stick layout. The platform layer carries the game through its whole boot: memory map and
-heaps (the SDK's OSAlloc over a 21 MB arena, `GC_ADDR`), OS time / interrupt / misc services,
-threads (the scheduler's task threads on PSP threads, the retrace callback on a vblank thread),
-the matrix library (the SDK's C functions), ARAM as RAM with an immediate DMA queue, the pad, and
-the disc as the `data/` tree. With two zero-filled placeholder files the game reaches its main
-loop, runs the sound driver and message init, and then wanders in its own code over the fake
-data (message width scans over a missing font), which is what garbage input does; real,
-converted data is the next requirement.
+All 661 game units compile; the 293 DOL units and all 105 game modules (the 9 debug tool
+modules stay out) link into one EBOOT (9.2 MB of code) that boots from the memory-stick layout.
+The platform layer carries the game through its whole boot: memory map and heaps (the SDK's
+OSAlloc over a 21 MB arena, `GC_ADDR`), OS time / interrupt / misc services, threads (the
+scheduler's task threads on PSP threads, the retrace callback on a vblank thread), the matrix
+library (the SDK's C functions), ARAM as RAM with an immediate DMA queue, the pad, the `data/`
+tree as the disc, the REL modules statically linked behind `OSLink` (tools/port/modlink.py:
+partial links with the entry points renamed, cross-module imports bound to the real definition
+or the module's own trap, everything else localized), and a first renderer, `port_gx.cpp`: GX on
+the GE with the vertex assembly on the CPU (immediate mode and disc display lists, big-endian
+mesh data read as-is), GameCube texture formats converted on first use (CMPR to DXT1), stage-0
+TEV, blend / depth / cull / alpha / fog state. With two zero-filled placeholder files the game
+runs its main loop with the GE live and no faults.
 
 Fixed on the way: five functions that fall off their end (GCC 2.95 returned the last call's
-value; GCC 15 makes that unreachable code and the game spun) now return under `RE4_PORT`.
+value; GCC 15 makes that unreachable code and the game spun), three DOL statics the modules
+import by name, two anchor-defined constants.
 
-Still stubs (about 210 entry points): GX (the renderer), AX / MIX / SYN / SEQ (sound), CARD
-(saves), the CRI movie player, `OSLink` (REL modules: they compile but are not loadable),
-`yz2Decode_Decode` (the archive decoder needs a C port of `src/game/yz2asm.cpp`). Next, in
-order: the asset converters (every archive format to little-endian: the reconstructed headers
-are the spec), the yz2 decoder, static linking of the modules behind `OSLink`, then GX on sceGu
-and the sound driver on sceSas.
+Not yet: hardware lighting, multi-stage TEV / indirect textures, framebuffer copies (the post
+filters), sound (AX / MIX / SYN / SEQ are stubs), saves (CARD), the CRI movie player, and the
+big-endian field types on most file-resident structures (only the core archive table, the
+texture palettes and the sound tables carry them so far); checking each loader needs the
+extracted files, which are not in the repository.

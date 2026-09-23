@@ -61,4 +61,6 @@ typedef int BOOL;
 #undef fabsf
 #endif
 
+#include "port_be.h"
+
 #endif

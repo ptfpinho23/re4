@@ -568,17 +568,17 @@ static void EspCalcTplAddr(TEXPalette* tpl)
     if (tpl == NULL) {
         return;
     }
-    if ((s32) tpl->descriptorArray < 0) {
+    if (IS_RELOCATED(tpl->descriptorArray)) {
         return;
     }
-    tpl->descriptorArray = (TEXDescriptor*) ((u32) tpl->descriptorArray + (u32) tpl);
+    tpl->descriptorArray = (TEXDescriptor*) (FILE_U32(tpl->descriptorArray) + (u32) tpl);
     for (i = 0; i < tpl->numDescriptors; i++) {
         desc = &tpl->descriptorArray[i];
-        desc->textureHeader = (TEXHeader*) ((u8*) tpl + (u32) desc->textureHeader);
-        desc->textureHeader->data = (u8*) tpl + (u32) desc->textureHeader->data;
+        desc->textureHeader = (TEXHeader*) ((u8*) tpl + FILE_U32(desc->textureHeader));
+        desc->textureHeader->data = (u8*) tpl + FILE_U32(desc->textureHeader->data);
         if (desc->CLUTHeader != NULL) {
-            desc->CLUTHeader = (CLUTHeader*) ((u8*) tpl + (u32) desc->CLUTHeader);
-            desc->CLUTHeader->data = (u8*) tpl + (u32) desc->CLUTHeader->data;
+            desc->CLUTHeader = (CLUTHeader*) ((u8*) tpl + FILE_U32(desc->CLUTHeader));
+            desc->CLUTHeader->data = (u8*) tpl + FILE_U32(desc->CLUTHeader->data);
         }
     }
 }

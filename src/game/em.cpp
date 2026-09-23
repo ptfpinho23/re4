@@ -246,7 +246,7 @@ void cEmMgr::move()
 // runs the work's push() cleanup and returns it to the pool.
 void cEmMgr::destroy(cEm* pEm)
 {
-    if ((u32) pEm < 0x80000000 || (u32) pEm > 0x82FFFFFF || (pEm->be_flag & 0x201) != 1) {
+    if (GC_PTR_BAD(pEm) || (pEm->be_flag & 0x201) != 1) {
         pLog->err(0, 0, "cEmMgr::destroy() WORK IS ALREADY DEAD. %08X", pEm);
         return;
     }

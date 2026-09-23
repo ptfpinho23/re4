@@ -45,7 +45,11 @@ u32 upDownCk(cPlayer* pl);
 }
 
 // cPlNeck's checks compile to the folded `addis 0x8000; cmplwi 0x02FFFFFF` range form.
+#ifndef RE4_PORT
 #define VALID_PTR2(p) ((u32) (p) - 0x80000000 <= 0x02FFFFFF)
+#else
+#define VALID_PTR2(p) GC_PTR_OK(p)
+#endif
 
 
 
