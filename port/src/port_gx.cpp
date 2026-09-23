@@ -1,3 +1,4 @@
+#pragma GCC optimize("O0")
 // port/src/port_gx: the GameCube GX graphics API on the PSP GE.
 //
 // Geometry: GX vertices arrive either through the write-gather pipe (gx.h's inline writers, direct
@@ -641,6 +642,7 @@ static const u8* drawVertices(Parser* s, int prim, int vf, u32 count)
             }
             if (t == 1) s->p += size;
         }
+        { static int dbg; if (dbg < 12) { dbg++; port_trace("[vtx] n=%u p=%p pos %g %g %g uv %g %g type %d cnt %d\n", n, s->p, px, py, pz, v.u, v.v, f->pos.type, f->pos.cnt); } }
         transformPos(m, px, py, pz, &v);
         if (lit) {
             f32 tn[3];
@@ -733,6 +735,7 @@ static void immFlush(void)
         return;
     }
     Parser s = {immBuf, 0};
+    { static int dbg; if (dbg < 3) { dbg++; const u32* w = (const u32*) immBuf; port_trace("[imm] len %u need %u count %u fmt %d: %08x %08x %08x %08x %08x %08x | %08x %08x %08x %08x %08x %08x\n", immLen, immBytesNeeded, immCount, immFmt, w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7], w[8], w[9], w[10], w[11]); } }
     drawVertices(&s, immPrim, immFmt, immCount);
 }
 
