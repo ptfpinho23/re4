@@ -82,12 +82,20 @@ static const TlutPort* tlutTable[20];
 
 struct TevStage {
     u8 coord, map, color, op;
+    u8 cin[4], ain[4];           // GXSetTevColorIn / AlphaIn: GX_CC_* / GX_CA_* of a, b, c, d
+    u8 kcsel;                    // GXSetTevKColorSel
 };
 static TevStage tev[16];
 static u8 numTevStages = 1, numTexGens = 1, numChans = 1;
 static u32 texGenMtx[8];         // GX_IDENTITY or a texture matrix id
 static u32 chanMatColor[2] = {0xFFFFFFFF, 0xFFFFFFFF};
 static u32 tevRegColor[4];
+static u32 tevKColor[4];
+// The draw's texture state, decided from the TEV stages (applyDrawState): the stage that samples a
+// texture, its texture function, whether the texture alpha counts, and a constant colour that
+// stands in for the rasterised colour when the stage multiplies the texture by a register.
+static int drawConstColorOn;
+static u32 drawConstColor;
 
 static int cullMode;
 static u32 copyClearColor = 0xFF000000;
@@ -112,8 +120,11 @@ static int inited;
 #define OVERLAY_LINES 14
 #define OVERLAY_COLS 60
 static char overlay[OVERLAY_LINES][OVERLAY_COLS];
+static u32 overlayStamp[OVERLAY_LINES];  // the frame the line arrived in
 static int overlayNext;
 static int overlayCount;
+static u32 overlayFrame;
+#define OVERLAY_KEEP_FRAMES (60 * 10)    // a line stays on screen for ten seconds
 
 extern "C" void port_gx_overlay_line(const char* text)
 {
@@ -121,6 +132,7 @@ extern "C" void port_gx_overlay_line(const char* text)
     overlay[overlayNext][OVERLAY_COLS - 1] = 0;
     char* nl = strchr(overlay[overlayNext], '\n');
     if (nl) *nl = 0;
+    overlayStamp[overlayNext] = overlayFrame;
     overlayNext = (overlayNext + 1) % OVERLAY_LINES;
     if (overlayCount < OVERLAY_LINES) overlayCount++;
 }
@@ -130,10 +142,14 @@ extern "C" int port_gx_active(void) { return inited; }
 // Drawn straight into the displayed frame after the swap (the debug screen's pixel writer).
 static void drawOverlay(void)
 {
+    overlayFrame++;
     int first = (overlayNext - overlayCount + OVERLAY_LINES) % OVERLAY_LINES;
-    pg_overlay_begin();
+    int shown = 0;
     for (int i = 0; i < overlayCount; i++) {
-        pg_debug_print(0, i, 0xFF40FF40, overlay[(first + i) % OVERLAY_LINES]);
+        int k = (first + i) % OVERLAY_LINES;
+        if (overlayFrame - overlayStamp[k] > OVERLAY_KEEP_FRAMES) continue;  // old lines fade out
+        if (!shown) pg_overlay_begin();
+        pg_debug_print(0, shown++, 0xFF40FF40, overlay[k]);
     }
 }
 
@@ -341,32 +357,83 @@ static void invalidateTextures(void)
 }
 
 // ---------------------------------------------------------------- per-draw state
-static int texturedDraw(void)
+static inline int inputsMention(const u8* in, u8 v) { return in[0] == v || in[1] == v || in[2] == v || in[3] == v; }
+
+// The stage the GE's single texture unit stands in for: the first active stage whose colour
+// combiner reads the texture colour (GX_CC_TEXC 8, or TEXA / TEXRRR.. 9, 16..18) through a bound map.
+static int textureStage(void)
 {
-    if (numTexGens == 0 || tev[0].map == 0xFF || tev[0].map >= 8 || texMap[tev[0].map] == NULL) {
-        return 0;
+    if (numTexGens == 0) return -1;
+    int n = numTevStages < 1 ? 1 : numTevStages > 16 ? 16 : numTevStages;
+    for (int i = 0; i < n; i++) {
+        const TevStage* st = &tev[i];
+        if (st->map == 0xFF || st->map >= 8 || texMap[st->map] == NULL) continue;
+        int usesTex = 0;
+        for (int k = 0; k < 4; k++) {
+            if (st->cin[k] == 8 || st->cin[k] == 9 || st->cin[k] >= 16) usesTex = 1;
+            if (st->ain[k] == 4) usesTex = 1;  // GX_CA_TEXA
+        }
+        if (usesTex) return i;
     }
-    return 1;
+    return -1;
+}
+
+static int texturedDraw(void) { return textureStage() >= 0; }
+
+// A colour register / constant the combiner multiplies the texture by (GX_CC_C0..C2 2/4/6, KONST 14).
+static int constInput(u8 v, u32* color)
+{
+    if (v == 2 || v == 4 || v == 6) { *color = tevRegColor[v / 2]; return 1; }
+    if (v == 14) return 0;  // KONST: resolved per stage by the caller
+    return 0;
 }
 
 static void applyDrawState(int hasVertexColor)
 {
-    int textured = texturedDraw();
-    if (textured) {
-        TexObjPort* t = texMap[tev[0].map];
-        TexCacheEntry* e = cachedTexture(t);
-        if (e) {
-            int tfx = PG_TFX_MODULATE;
-            if (tev[0].op == 3) tfx = PG_TFX_REPLACE;       // GX_REPLACE
-            else if (tev[0].op == 1) tfx = PG_TFX_DECAL;    // GX_DECAL
-            pg_texture(e->psm, e->w, e->h, e->converted, t->wrapS == 0 ? 1 : 0, t->wrapT == 0 ? 1 : 0,
-                       t->minFilt == 0 ? 0 : 1, t->magFilt == 0 ? 0 : 1, tfx);
-        } else {
-            pg_texture_off();
-        }
-    } else {
+    drawConstColorOn = 0;
+    int si = textureStage();
+    if (si < 0) {
         pg_texture_off();
+        return;
     }
+    const TevStage* st = &tev[si];
+    TexObjPort* t = texMap[st->map];
+    TexCacheEntry* e = cachedTexture(t);
+    if (!e) {
+        pg_texture_off();
+        return;
+    }
+    // colour: d + (1 - c) * a + c * b with a = ZERO (15): c * b -> texture times c, or d alone
+    int tfx = PG_TFX_MODULATE;
+    const u8* c = st->cin;
+    u8 other = 0xFF;
+    if (c[0] == 15 && c[3] == 15) {
+        if (c[1] == 8) other = c[2]; else if (c[2] == 8) other = c[1];
+    }
+    if (c[0] == 15 && c[1] == 15 && c[2] == 15 && c[3] == 8) {
+        tfx = PG_TFX_REPLACE;                    // texture only
+    } else if (other == 12) {
+        tfx = PG_TFX_REPLACE;                    // texture * ONE
+    } else if (other == 10 || other == 0xFF) {
+        tfx = PG_TFX_MODULATE;                   // texture * rasterised colour (or unknown: modulate)
+    } else {
+        u32 col = 0xFFFFFFFF;
+        int isConst = constInput(other, &col);
+        if (other == 14) {                       // KONST: the stage's constant selection
+            int sel = st->kcsel;
+            if (sel >= 0x0C && sel <= 0x0F) { col = tevKColor[sel - 0x0C]; isConst = 1; }
+            else if (sel <= 7) { u32 v = (u32) ((8 - sel) * 255 / 8); col = 0xFF000000u | (v << 16) | (v << 8) | v; isConst = 1; }
+        }
+        if (isConst) {                           // texture * register: the register replaces the vertex colour
+            drawConstColorOn = 1;
+            drawConstColor = col;
+        }
+        tfx = PG_TFX_MODULATE;
+    }
+    if (st->op == 1) tfx = PG_TFX_DECAL;         // GX_DECAL through GXSetTevOp
+    int tcc = inputsMention(st->ain, 4) ? 1 : 0;  // the texture alpha counts only when the alpha combiner reads it
+    pg_texture(e->psm, e->w, e->h, e->converted, t->wrapS == 0 ? 1 : 0, t->wrapT == 0 ? 1 : 0,
+               t->minFilt == 0 ? 0 : 1, t->magFilt == 0 ? 0 : 1, tfx, tcc);
 }
 
 // ---------------------------------------------------------------- vertex parsing
@@ -604,6 +671,9 @@ static const u8* drawVertices(Parser* s, int prim, int vf, u32 count)
     (void) hasColor;
     if (cullMode == 3) return s->p;  // GX_CULL_ALL
     applyDrawState(hasColor);
+    if (drawConstColorOn) {
+        for (u32 i = 0; i < o; i++) out[i].color = (out[i].color & 0xFF000000u) | (drawConstColor & 0x00FFFFFFu);
+    }
     static const int primTbl[8] = {PG_TRIANGLES, PG_TRIANGLES, PG_TRIANGLES, PG_TRIANGLE_STRIP, PG_TRIANGLE_FAN, PG_LINES, PG_LINE_STRIP, PG_POINTS};
     pg_draw(primTbl[prim & 7], (int) o, out);
     return s->p;
@@ -698,6 +768,7 @@ void GXInit_port(void)
     for (int i = 0; i < 16; i++) { tev[i].coord = 0; tev[i].map = 0xFF; tev[i].color = 0xFF; tev[i].op = 0; }
     tev[0].map = 0;
     tev[0].color = 4;  // GXInit: stage 0 rasterises GX_COLOR0A0
+    GXSetTevOp(0, 0);  // GX_MODULATE
     for (int i = 0; i < 64; i++) {
         nrmMem[i][0] = (i % 3 == 0) ? 1.0f : 0.0f;
         nrmMem[i][1] = (i % 3 == 1) ? 1.0f : 0.0f;
@@ -1035,13 +1106,29 @@ void GXSetTevOrder(int stage, int coord, int map, int color)
     if (stage >= 0 && stage < 16) { tev[stage].coord = (u8) coord; tev[stage].map = (u8) map; tev[stage].color = (u8) color; }
 }
 
+void GXSetTevColorIn(int stage, int a, int b, int c, int d)
+{
+    if (stage < 0 || stage >= 16) return;
+    tev[stage].cin[0] = (u8) a; tev[stage].cin[1] = (u8) b; tev[stage].cin[2] = (u8) c; tev[stage].cin[3] = (u8) d;
+}
+void GXSetTevAlphaIn(int stage, int a, int b, int c, int d)
+{
+    if (stage < 0 || stage >= 16) return;
+    tev[stage].ain[0] = (u8) a; tev[stage].ain[1] = (u8) b; tev[stage].ain[2] = (u8) c; tev[stage].ain[3] = (u8) d;
+}
+// The SDK's GXSetTevOp is the combiner inputs of the five classic modes.
 void GXSetTevOp(int stage, int mode)
 {
-    if (stage >= 0 && stage < 16) tev[stage].op = (u8) mode;
+    if (stage < 0 || stage >= 16) return;
+    tev[stage].op = (u8) mode;
+    switch (mode) {
+    case 0: GXSetTevColorIn(stage, 15, 8, 10, 15); GXSetTevAlphaIn(stage, 7, 4, 5, 7); break;   // GX_MODULATE
+    case 1: GXSetTevColorIn(stage, 10, 8, 9, 15); GXSetTevAlphaIn(stage, 7, 7, 7, 5); break;    // GX_DECAL
+    case 2: GXSetTevColorIn(stage, 10, 12, 8, 15); GXSetTevAlphaIn(stage, 7, 4, 5, 7); break;   // GX_BLEND
+    case 3: GXSetTevColorIn(stage, 15, 15, 15, 8); GXSetTevAlphaIn(stage, 7, 7, 7, 4); break;   // GX_REPLACE
+    default: GXSetTevColorIn(stage, 15, 15, 15, 10); GXSetTevAlphaIn(stage, 7, 7, 7, 5); break; // GX_PASSCLR
+    }
 }
-
-void GXSetTevColorIn(int stage, int a, int b, int c, int d) {}
-void GXSetTevAlphaIn(int stage, int a, int b, int c, int d) {}
 void GXSetTevColorOp(int stage, int op, int bias, int scale, u8 clamp, int out_reg) {}
 void GXSetTevAlphaOp(int stage, int op, int bias, int scale, u8 clamp, int out_reg) {}
 void GXSetTevColor(int id, GXColor color)
@@ -1049,8 +1136,11 @@ void GXSetTevColor(int id, GXColor color)
     if (id >= 0 && id < 4) tevRegColor[id] = ((u32) color.a << 24) | ((u32) color.b << 16) | ((u32) color.g << 8) | color.r;
 }
 void GXSetTevColorS10(int id, GXColorS10 color) {}
-void GXSetTevKColor(int id, GXColor color) {}
-void GXSetTevKColorSel(int stage, int sel) {}
+void GXSetTevKColor(int id, GXColor color)
+{
+    if (id >= 0 && id < 4) tevKColor[id] = ((u32) color.a << 24) | ((u32) color.b << 16) | ((u32) color.g << 8) | color.r;
+}
+void GXSetTevKColorSel(int stage, int sel) { if (stage >= 0 && stage < 16) tev[stage].kcsel = (u8) sel; }
 void GXSetTevKAlphaSel(int stage, int sel) {}
 void GXSetTevSwapMode(int stage, int ras_sel, int tex_sel) {}
 void GXSetTevSwapModeTable(int table, int red, int green, int blue, int alpha) {}

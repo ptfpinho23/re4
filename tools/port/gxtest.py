@@ -367,7 +367,7 @@ def test_render_state():
     data, _, _, _ = make_texture(1, 8, 8, rnd)
     lines = run(point_setup() + f"texobj 1 8 8 {data.hex()}\ntevop 0 3\nbegin 184 0 1\nputf 1\nputf 2\nputf 3\n")
     got = state_lines(lines, "TEXSTATE")[-1].split()[1:]
-    check(got == ["0", "0", "1", "1", "3"], f"texture state {got}")
+    check(got == ["0", "0", "1", "1", "3", "1"], f"texture state {got}")
     print("  render state (depth, blend, cull, alpha test, masks, fog, tex state) ok")
 
 
@@ -552,6 +552,36 @@ def test_copies():
     print("  framebuffer copies (RGBA8 half size, A8, Z8, clear after copy) ok")
 
 
+def test_tev(rnd):
+    # the texture function from the combiner inputs: ZERO/TEXC/RASC/ZERO = modulate, ..ZERO/TEXC =
+    # replace, TEXC * ONE = replace, TEXC * register = modulate with the register as vertex colour;
+    # the texture alpha counts only when the alpha combiner reads TEXA; an untextured stage 0
+    # followed by a textured stage 1 still binds the texture
+    data, _, _, _ = make_texture(1, 8, 8, rnd)
+    base = point_setup() + f"texobj 1 8 8 {data.hex()}\nmatsrc 0\nmatcolor 10 20 30 200\n"
+    cases = [
+        ("tevcin 0 15 8 10 15\ntevain 0 7 4 5 7\n", "0 1", (200 << 24) | (30 << 16) | (20 << 8) | 10),
+        ("tevcin 0 15 15 15 8\ntevain 0 7 7 7 4\n", "3 1", None),
+        ("tevcin 0 15 8 12 15\ntevain 0 7 7 7 5\n", "3 0", None),
+        ("tevcin 0 15 8 10 15\ntevain 0 7 7 7 5\n", "0 0", None),
+        ("tevcolor 1 50 60 70 80\ntevcin 0 15 8 2 15\ntevain 0 7 7 7 5\n", "0 0", (200 << 24) | (70 << 16) | (60 << 8) | 50),
+        ("kcolor 2 1 2 3 4\nkcolorsel 0 14\ntevcin 0 15 8 14 15\ntevain 0 7 4 5 7\n", "0 1", (200 << 24) | (3 << 16) | (2 << 8) | 1),
+        ("numtevstages 2\ntevcin 0 15 15 15 10\ntevain 0 7 7 7 5\ntevorder 1 0 0 4\ntevcin 1 15 8 0 15\ntevain 1 7 7 7 0\n", "0 0", None),
+    ]
+    for setup, tfx_tcc, color in cases:
+        lines = run(base + setup + "begin 184 0 1\nputf 1\nputf 2\nputf 3\n")
+        st = state_lines(lines, "TEXSTATE")[-1].split()[5:]
+        check(" ".join(st) == tfx_tcc, f"tev {setup.strip()!r}: tfx/tcc {st} vs {tfx_tcc}")
+        draws = parse_draws(lines)
+        check(draws and draws[0][2] is not None, f"tev {setup.strip()!r}: not textured")
+        if color is not None:
+            check(draws[0][1][0][2] == color, f"tev {setup.strip()!r}: vertex colour {draws[0][1][0][2]:08x} vs {color:08x}")
+    # a stage that does not read the texture leaves the draw untextured
+    lines = run(base + "tevcin 0 15 15 15 10\ntevain 0 7 7 7 5\nbegin 184 0 1\nputf 1\nputf 2\nputf 3\n")
+    check(parse_draws(lines)[0][2] is None, "colour-only stage still textured")
+    print("  TEV combiner inputs (modulate / replace / register colour / alpha source / later stage) ok")
+
+
 def main():
     build()
     rnd = random.Random(11)
@@ -564,6 +594,7 @@ def main():
     test_recording(rnd)
     test_lighting(rnd)
     test_copies()
+    test_tev(rnd)
     print("gxtest ok")
 
 

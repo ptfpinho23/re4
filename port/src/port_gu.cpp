@@ -7,10 +7,14 @@
 #include <string.h>
 #include "port_gu.h"
 
+extern "C" void port_trace(const char* fmt, ...);
 #define BUF_W 512
 #define FRAME_BYTES (BUF_W * PG_SCREEN_H * 4)
 
 static unsigned int __attribute__((aligned(16))) guList[512 * 1024 / 4];
+static void* drawBuf;              // the buffer the current list draws into (sceGuSwapBuffers' return)
+static void* dispBuf = (void*) FRAME_BYTES;  // the buffer on screen
+static char dumpPath[160];         // pg_request_dump: the finished frame is saved at the next pg_finish
 
 extern "C" {
 
@@ -43,23 +47,44 @@ void pg_init(void)
     sceGuStart(GU_DIRECT, guList);
 }
 
-void pg_start(void) { sceGuStart(GU_DIRECT, guList); }
+void pg_start(void)
+{
+    sceGuStart(GU_DIRECT, guList);
+    // sceGuStart only emits the frame buffer address when it is not 0; buffer 0 needs it explicitly
+    sceGuDrawBuffer(GU_PSM_8888, drawBuf, BUF_W);
+}
 
+static void saveBuffer(const char* path, const void* buf);
 void pg_finish(void)
 {
     sceGuFinish();
     sceGuSync(0, 0);
+    if (dumpPath[0]) {  // the list just drew the whole frame into drawBuf
+        for (int i = 0; i < 256; i += 8) {
+            port_trace("[ge] %08x %08x %08x %08x %08x %08x %08x %08x\n", guList[i], guList[i + 1], guList[i + 2], guList[i + 3], guList[i + 4], guList[i + 5], guList[i + 6], guList[i + 7]);
+        }
+        saveBuffer(dumpPath, (const unsigned char*) 0x44000000 + (unsigned int) drawBuf);
+        port_trace("[ge] frame dumped from draw buffer %p to %s\n", drawBuf, dumpPath);
+        dumpPath[0] = 0;
+    }
+}
+void pg_request_dump(const char* path)
+{
+    strncpy(dumpPath, path, sizeof(dumpPath) - 1);
 }
 
 static int swaps;
+int pg_stat_draws, pg_stat_verts, pg_stat_clears;  // per frame, for the demo's log
 void pg_swap(void)
 {
-    sceGuSwapBuffers();
+    dispBuf = drawBuf;
+    drawBuf = sceGuSwapBuffers();
     swaps++;
 }
 
 void pg_clear(unsigned int color, unsigned int depth, int colorToo, int depthToo)
 {
+    pg_stat_clears++;
     sceGuClearColor(color);
     sceGuClearDepth(depth);
     sceGuClear((colorToo ? GU_COLOR_BUFFER_BIT : 0) | (depthToo ? GU_DEPTH_BUFFER_BIT : 0));
@@ -136,14 +161,14 @@ void pg_fog(int enable, float nearz, float farz, unsigned int color)
 
 void pg_texture_off(void) { sceGuDisable(GU_TEXTURE_2D); }
 
-void pg_texture(int psm, int w, int h, const void* data, int wrapS, int wrapT, int minFilt, int magFilt, int tfx)
+void pg_texture(int psm, int w, int h, const void* data, int wrapS, int wrapT, int minFilt, int magFilt, int tfx, int tcc)
 {
     sceGuEnable(GU_TEXTURE_2D);
     sceGuTexMode(psm, 0, 0, 0);
     sceGuTexImage(0, w, h, w, data);
     sceGuTexFilter(minFilt, magFilt);
     sceGuTexWrap(wrapS, wrapT);
-    sceGuTexFunc(tfx, GU_TCC_RGBA);
+    sceGuTexFunc(tfx, tcc ? GU_TCC_RGBA : GU_TCC_RGB);
     sceGuTexScale(1.0f, 1.0f);
     sceGuTexOffset(0.0f, 0.0f);
 }
@@ -167,6 +192,8 @@ void pg_projection(const float* m16)
 
 void pg_draw(int prim, int count, const PgVertex* verts)
 {
+    pg_stat_draws++;
+    pg_stat_verts += count;
     sceGuDrawArray(prim, GU_TEXTURE_32BITF | GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_3D, count, 0, verts);
 }
 
@@ -175,8 +202,7 @@ void* pg_get_memory(int bytes) { return sceGuGetMemory(bytes); }
 static int overlayInit;
 void pg_overlay_begin(void)
 {
-    // buffer 0 is drawn first, so after an odd number of swaps buffer 0 is the one displayed
-    void* shown = (void*) (0x44000000 + ((swaps & 1) ? 0 : FRAME_BYTES));
+    void* shown = (void*) (0x44000000 + (unsigned int) dispBuf);
     if (!overlayInit) {
         pspDebugScreenInitEx(shown, PSP_DISPLAY_PIXEL_FORMAT_8888, 0);
         overlayInit = 1;
@@ -198,13 +224,41 @@ void* pg_uncached(void* p) { return (void*) ((unsigned int) p | 0x40000000); }
 
 void pg_wait_vblank(void) { sceDisplayWaitVblankStart(); }
 
+static void saveBuffer(const char* path, const void* buf)
+{
+    SceUID fd = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0666);
+    if (fd < 0) return;
+    for (int y = 0; y < PG_SCREEN_H; y++) {
+        sceIoWrite(fd, (const unsigned char*) buf + y * BUF_W * 4, PG_SCREEN_W * 4);
+    }
+    sceIoClose(fd);
+}
+
+// Saves both frame buffers: "<path>" is the one on screen, "<path>.draw" the one being drawn.
+int pg_save_frame(const char* path)
+{
+    sceGuFinish();
+    sceGuSync(0, 0);
+    for (int i = 0; i < 256; i += 8) {
+        port_trace("[ge] %08x %08x %08x %08x %08x %08x %08x %08x\n", guList[i], guList[i + 1], guList[i + 2], guList[i + 3], guList[i + 4], guList[i + 5], guList[i + 6], guList[i + 7]);
+    }
+    void* shown = (void*) (0x44000000 + (unsigned int) dispBuf);
+    void* drawn = (void*) (0x44000000 + (unsigned int) drawBuf);
+    saveBuffer(path, shown);
+    char p2[160];
+    strcpy(p2, path);
+    strcat(p2, ".draw");
+    saveBuffer(p2, drawn);
+    sceGuStart(GU_DIRECT, guList);
+    return 1;
+}
+
 void pg_copy_frame(unsigned int* dst, int dstW, int dstH, int srcX, int srcY, int srcW, int srcH, int mode)
 {
     // the list so far must have drawn before the CPU reads the buffer; then the list restarts
     sceGuFinish();
     sceGuSync(0, 0);
-    unsigned int drawOfs = (swaps & 1) ? FRAME_BYTES : 0;
-    const unsigned int* color = (const unsigned int*) (0x44000000 + drawOfs);
+    const unsigned int* color = (const unsigned int*) (0x44000000 + (unsigned int) drawBuf);
     const unsigned short* depth = (const unsigned short*) (0x44000000 + FRAME_BYTES * 2);
     if (srcW < 1) srcW = 1;
     if (srcH < 1) srcH = 1;

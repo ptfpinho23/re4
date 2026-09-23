@@ -219,7 +219,7 @@ void AXInitEx(u32 mode)
         port_log("[port] sceAudioChReserve failed (%x): no sound\n", audioChannel);
         return;
     }
-    audioThread = sceKernelCreateThread("re4audio", audioThreadMain, 18, 0x8000, 0x00800000 /* PSP_THREAD_ATTR_USER */, NULL);
+    audioThread = sceKernelCreateThread("re4audio", audioThreadMain, 18, 0x8000, PSP_THREAD_ATTR_USER, NULL);
     if (audioThread >= 0) sceKernelStartThread(audioThread, 0, NULL);
 }
 void AXInit(void) { AXInitEx(0); }

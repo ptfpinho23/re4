@@ -31,6 +31,17 @@ static s32 openEntry = -1;
 static int currentDisc;       // 0 = disc 1
 static DVDDiskID currentId;
 static int dvdTrace = 1;      // log every read
+// The game's threads and the sound driver's stream player (on the audio thread) read at the same
+// time; the disc driver queued them, this serialises them.
+static SceUID_ dvdSema = -1;
+static void dvdLock(void)
+{
+    if (dvdSema < 0) dvdSema = sceKernelCreateSema("re4dvd", 0, 1, 1, NULL);
+    sceKernelWaitSema(dvdSema, 1, NULL);
+}
+static void dvdUnlock(void) { sceKernelSignalSema(dvdSema, 1); }
+
+extern "C" void port_demo_run(void);  // port_demo.cpp
 
 static const char* const roots[] = {"ms0:/PSP/GAME/RE4/", "umd0:/", "host0:/", "disc0:/", "ms0:/RE4/", NULL};
 
@@ -52,6 +63,16 @@ static int findRoot(void)
             strcpy(dataRoot, path);
             strcat(dataRoot, "/");
             port_log("[port] data directory: %s\n", dataRoot);
+            // the core archive is the first thing the game needs; without it the tree is not the game
+            strcpy(path, dataRoot);
+            strcat(path, "etc/core.das");
+            PspIoStat st;
+            if (sceIoGetstat(path, &st) < 0) {
+                port_log("[port] *** GAME FILES MISSING: %setc/core.das not found ***\n", dataRoot);
+                port_log("[port] extract both discs with tools/port/gamedata.py extract <disc.iso> data\n");
+                port_log("[port] and copy the data/ tree next to this EBOOT; the game cannot start without it\n");
+                port_demo_run();  // shows the renderer instead; never returns
+            }
             memset(&currentId, 0, sizeof(currentId));
             memcpy(currentId.gameName, "G4BE", 4);
             memcpy(currentId.company, "08", 2);
@@ -99,7 +120,17 @@ static s32 findEntry(const char* discPath)
 
 extern "C" {
 
+static s32 DVDConvertPathToEntrynum_locked(const char* path);
+
 s32 DVDConvertPathToEntrynum(const char* path)
+{
+    dvdLock();
+    s32 r = DVDConvertPathToEntrynum_locked(path);
+    dvdUnlock();
+    return r;
+}
+
+static s32 DVDConvertPathToEntrynum_locked(const char* path)
 {
     if (!findRoot()) {
         return -1;
@@ -152,6 +183,7 @@ BOOL DVDReadAsyncPrio(DVDFileInfo* fileInfo, void* addr, s32 length, s32 offset,
 {
     s32 entry = (s32) fileInfo->startAddr;
     s32 n = -1;
+    dvdLock();
     int known = entry >= 0 && (u32) entry < entryCount;
     if (known) {
         if (openEntry != entry) {
@@ -174,13 +206,14 @@ BOOL DVDReadAsyncPrio(DVDFileInfo* fileInfo, void* addr, s32 length, s32 offset,
         }
     }
     if (dvdTrace) {
-        port_log("[dvd] read %s ofs %x len %x -> %p: %d\n", known ? entries[entry].path : "?", (unsigned) offset,
+        port_trace("[dvd] read %s ofs %x len %x -> %p: %d\n", known ? entries[entry].path : "?", (unsigned) offset,
                  (unsigned) length, addr, (int) n);
     }
     fileInfo->cb.state = DVD_STATE_END;
     fileInfo->cb.currTransferSize = (u32) length;
     fileInfo->cb.transferredSize = n < 0 ? 0 : (u32) n;
     fileInfo->callback = callback;
+    dvdUnlock();
     if (callback) {
         callback(n < 0 ? DVD_RESULT_FATAL_ERROR : n, fileInfo);
     }

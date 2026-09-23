@@ -62,6 +62,19 @@ extern "C" void port_log(const char* fmt, ...)
     }
 }
 
+// A trace line: stdout only, never the screen (the DVD layer logs every read).
+extern "C" void port_trace(const char* fmt, ...)
+{
+    char buf[512];
+    va_list ap;
+    va_start(ap, fmt);
+    int n = format(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    if (n > 0) {
+        sceIoWrite(sceKernelStdout(), buf, n);
+    }
+}
+
 extern "C" void port_stub_report(const char* name, int* once)
 {
     *once = 1;

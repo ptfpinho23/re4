@@ -87,6 +87,12 @@ int main()
         else if (!strcmp(cmd, "alphaupdate")) { int e; sscanf(args, "%d", &e); GXSetAlphaUpdate((u8) e); }
         else if (!strcmp(cmd, "fog")) { int t; f32 a, b, c, d; unsigned r, g, bl, al; sscanf(args, "%d %f %f %f %f %u %u %u %u", &t, &a, &b, &c, &d, &r, &g, &bl, &al); GXColor col = {(u8) r, (u8) g, (u8) bl, (u8) al}; GXSetFog(t, a, b, c, d, col); }
         else if (!strcmp(cmd, "tevop")) { int st, m; sscanf(args, "%d %d", &st, &m); GXSetTevOp(st, m); }
+        else if (!strcmp(cmd, "tevcin")) { int st, a, b, c, d; sscanf(args, "%d %d %d %d %d", &st, &a, &b, &c, &d); GXSetTevColorIn(st, a, b, c, d); }
+        else if (!strcmp(cmd, "tevain")) { int st, a, b, c, d; sscanf(args, "%d %d %d %d %d", &st, &a, &b, &c, &d); GXSetTevAlphaIn(st, a, b, c, d); }
+        else if (!strcmp(cmd, "numtevstages")) { int n; sscanf(args, "%d", &n); GXSetNumTevStages((u8) n); }
+        else if (!strcmp(cmd, "tevcolor")) { int id; unsigned r, g, b, a; sscanf(args, "%d %u %u %u %u", &id, &r, &g, &b, &a); GXColor c = {(u8) r, (u8) g, (u8) b, (u8) a}; GXSetTevColor(id, c); }
+        else if (!strcmp(cmd, "kcolor")) { int id; unsigned r, g, b, a; sscanf(args, "%d %u %u %u %u", &id, &r, &g, &b, &a); GXColor c = {(u8) r, (u8) g, (u8) b, (u8) a}; GXSetTevKColor(id, c); }
+        else if (!strcmp(cmd, "kcolorsel")) { int st, sel; sscanf(args, "%d %d", &st, &sel); GXSetTevKColorSel(st, sel); }
         else if (!strcmp(cmd, "beginlist")) { int n; sscanf(args, "%d", &n); free(recorded); recorded = (u8*) malloc(n); GXBeginDisplayList(recorded, (u32) n); }
         else if (!strcmp(cmd, "endlist")) { recordedLen = GXEndDisplayList(); printf("RECORDED %u\n", recordedLen); }
         else if (!strcmp(cmd, "calllist")) { GXCallDisplayList(recorded, recordedLen); }

@@ -23,10 +23,10 @@ void pg_cull(int e, int cw) { printf("CULL %d %d\n", e, cw); }
 void pg_pixel_mask(unsigned int m) { printf("MASK %08x\n", m); }
 void pg_fog(int e, float n, float f, unsigned int c) { printf("FOG %d %g %g %06x\n", e, n, f, c); }
 void pg_texture_off(void) { lastTexSet = 0; }
-void pg_texture(int psm, int w, int h, const void* data, int ws, int wt, int mn, int mg, int tfx)
+void pg_texture(int psm, int w, int h, const void* data, int ws, int wt, int mn, int mg, int tfx, int tcc)
 {
     lastTexData = data; lastTexPsm = psm; lastTexW = w; lastTexH = h; lastTexSet = 1;
-    printf("TEXSTATE %d %d %d %d %d\n", ws, wt, mn, mg, tfx);
+    printf("TEXSTATE %d %d %d %d %d %d\n", ws, wt, mn, mg, tfx, tcc);
 }
 void pg_projection(const float* m)
 {
@@ -54,6 +54,8 @@ void pg_debug_print(int c, int r, unsigned int col, const char* t) {}
 void pg_dcache_writeback(const void* p, int n) {}
 void* pg_uncached(void* p) { return p; }
 void pg_wait_vblank(void) {}
+int pg_save_frame(const char* path) { return 0; }
+void pg_request_dump(const char* path) {}
 void pg_copy_frame(unsigned int* dst, int dstW, int dstH, int srcX, int srcY, int srcW, int srcH, int mode)
 {
     printf("COPY %d %d %d %d %d %d %d\n", dstW, dstH, srcX, srcY, srcW, srcH, mode);

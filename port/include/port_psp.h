@@ -94,8 +94,10 @@ int sceIoMkdir(const char* dir, int mode);
 // port/src/port_log.cpp
 #ifdef __cplusplus
 extern "C" void port_log(const char* fmt, ...);
+extern "C" void port_trace(const char* fmt, ...);  // stdout only, never the screen
 #else
 void port_log(const char* fmt, ...);
+void port_trace(const char* fmt, ...);
 #endif
 
 #endif
