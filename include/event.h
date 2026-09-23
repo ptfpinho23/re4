@@ -65,7 +65,7 @@ public:
 // Event file ("even" "t" header) the room's evd data hands to EventMgr::SetEvt.
 struct EvtBinEntry {
     char name[0x30];   // 0x00  file name of the bin/tpl
-    u32 ofs;           // 0x30  offset of its data from the header
+    be_u32 ofs;        // 0x30  offset of its data from the header
     u8 pad_34[0xC];
 };
 
@@ -74,12 +74,12 @@ struct EvtHeader {
     u8 pad_8[0x18];
     char room[8];      // 0x20  "r105"
     char no[0xC];      // 0x28  "s10"
-    s32 sndFlag;       // 0x34  bit31: no SndEventInit / SndEventEnd
+    be_s32 sndFlag;    // 0x34  bit31: no SndEventInit / SndEventEnd
     u8 pad_38[8];
-    u32 pacOfs;        // 0x40  first packet
-    u32 pacSize;       // 0x44  size of the packet stream
-    s32 nBin;          // 0x48  entries of the bin table
-    u32 binOfs;        // 0x4C  EvtBinEntry[nBin]
+    be_u32 pacOfs;     // 0x40  first packet
+    be_u32 pacSize;    // 0x44  size of the packet stream
+    be_s32 nBin;       // 0x48  entries of the bin table
+    be_u32 binOfs;     // 0x4C  EvtBinEntry[nBin]
 };
 
 // Event::StatusFlag bit numbers (PS2 EvtStatusFlag): FlgOnStatus(no) sets bit 31 - no, so the mask of flag
@@ -159,12 +159,12 @@ enum EvpTp {
 // Event packet stream: a 0x10 header followed by the per-id parameters (`size` bytes in total).
 // The union members below are the shapes the handlers read.
 struct EvtPacket {
-    int id;            // 0x00  EvpTp: packetTbl index (0..0x20)
-    u32 flag;          // 0x04  bit31: position relative to the base model, bit30: OyaSetObj18, bit29: Str one-shot
-    s16 cut;           // 0x08
-    s16 frame;         // 0x0A
-    s16 size;          // 0x0C  offset of the next packet
-    s16 pad_E;
+    be_s32 id;         // 0x00  EvpTp: packetTbl index (0..0x20)
+    be_u32 flag;       // 0x04  bit31: position relative to the base model, bit30: OyaSetObj18, bit29: Str one-shot
+    be_s16 cut;        // 0x08
+    be_s16 frame;      // 0x0A
+    be_s16 size;       // 0x0C  offset of the next packet
+    be_s16 pad_E;
     union {
         struct {
             char name[0xC];   // 0x10  model name
@@ -180,20 +180,20 @@ struct EvtPacket {
         struct {
             char name[0xC];   // 0x10
             char oya[0xC];    // 0x1C
-            s32 pos[3];       // 0x28
-            s32 rot[3];       // 0x34  degrees
-            s32 partsNo;      // 0x40
+            be_s32 pos[3];    // 0x28
+            be_s32 rot[3];    // 0x34  degrees
+            be_s32 partsNo;   // 0x40
         } pos;
         struct {
             char name[0xC];   // 0x10
-            s32 type;         // 0x1C
+            be_s32 type;      // 0x1C
             u8 pad_20[3];
             u8 parts;         // 0x23
         } esp;
         struct {
-            s32 no;           // 0x10
-            s32 arg;          // 0x14
-            s32 time;         // 0x18
+            be_s32 no;        // 0x10
+            be_s32 arg;       // 0x14
+            be_s32 time;      // 0x18
         } val;
     };
 };

@@ -37,11 +37,11 @@ void IdTexRelease(int owner)
 
 // Effect texture pack: version 0xB, id table at 0x04, TPL table at 0x18, animation table at 0x1C.
 struct IdTexData {
-    u32 version;  // 0x00  == 0xB
-    u32 ofsId;    // 0x04  -> TexIdTbl
+    be_u32 version;  // 0x00  == 0xB
+    be_u32 ofsId;    // 0x04  -> TexIdTbl
     u8 pad_8[0x18 - 0x8];
-    u32 ofsTpl;   // 0x18  -> TexOfsTbl of TPLs
-    u32 ofsAnm;   // 0x1C  -> TexOfsTbl of TexAnms
+    be_u32 ofsTpl;   // 0x18  -> TexOfsTbl of TPLs
+    be_u32 ofsAnm;   // 0x1C  -> TexOfsTbl of TexAnms
 };
 
 // Registers every texture of an id texture data block (version 0xB: id table, TPL table, TexAnm

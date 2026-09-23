@@ -303,18 +303,18 @@ CameraDataHeader* CameraControl::calcAddr(CameraDataHeader* pBuff)
 
     rec = (CameraAreaRec*) (pBuff + 1);
     for (i = 0; i < pBuff->numArea; i++, rec++) {
-        if ((s32) rec->area < 0) {
+        if (IS_RELOCATED(rec->area)) {
             return pBuff;
         }
-        rec->area = (CameraAreaInfo*) ((u32) rec->area + (u32) pBuff);
+        rec->area = (CameraAreaInfo*) (FILE_U32(rec->area) + (u32) pBuff);
         if (rec->cut) {
-            rec->cut = (CameraCut*) ((u32) rec->cut + (u32) pBuff);
+            rec->cut = (CameraCut*) (FILE_U32(rec->cut) + (u32) pBuff);
         }
     }
 
     area = (CameraAreaInfo*) rec;
     for (i = 0; i < pBuff->numArea; i++, area++) {
-        area->points = (Vec*) ((u32) area->points + (u32) pBuff);
+        area->points = (BeVec*) (FILE_U32(area->points) + (u32) pBuff);
         if (ver2) {
             area->attr = 3;
         }
@@ -331,11 +331,11 @@ CameraDataHeader* CameraControl::calcAddr(CameraDataHeader* pBuff)
 
     cut = (CameraCut*) area;
     for (i = 0; i < pBuff->numCut; i++, cut++) {
-        cut->pos = (Vec*) ((u32) cut->pos + (u32) pBuff);
-        cut->at = (Vec*) ((u32) cut->at + (u32) pBuff);
-        cut->roll = (f32*) ((u32) cut->roll + (u32) pBuff);
-        cut->fovy = (f32*) ((u32) cut->fovy + (u32) pBuff);
-        cut->frames = (u16*) ((u32) cut->frames + (u32) pBuff);
+        cut->pos = (BeVec*) (FILE_U32(cut->pos) + (u32) pBuff);
+        cut->at = (BeVec*) (FILE_U32(cut->at) + (u32) pBuff);
+        cut->roll = (be_f32*) (FILE_U32(cut->roll) + (u32) pBuff);
+        cut->fovy = (be_f32*) (FILE_U32(cut->fovy) + (u32) pBuff);
+        cut->frames = (be_u16*) (FILE_U32(cut->frames) + (u32) pBuff);
     }
     return pBuff;
 }
@@ -758,9 +758,9 @@ int area_hit_p3(Vec* pPos, CameraAreaInfo* pArea)
         n1 = n - 1;   // its own statement: `(i0 + n - 1)` is reassociated by fold into `(i0 - 1) + n`
         i0 = i + i + 1;
         i0 %= n;      // two sets of i0: loop.c does not strength-reduce the 2i+1 giv
-        p[0] = &pArea->points[i0];
-        p[1] = &pArea->points[(i0 + n1) % n];
-        p[2] = &pArea->points[(i0 + 1) % n];
+        p[0] = BEVEC_PTR(pArea->points[i0]);
+        p[1] = BEVEC_PTR(pArea->points[(i0 + n1) % n]);
+        p[2] = BEVEC_PTR(pArea->points[(i0 + 1) % n]);
         PSVECSubtract(pPos, p[0], &v0);
         PSVECSubtract(p[1], p[0], &v1);
         PSVECSubtract(p[2], p[0], &v2);
@@ -797,8 +797,8 @@ int area_hit_pN(Vec* pPos, CameraAreaInfo* pArea)
     c = pPos->x - pz;
     count = 0;
     for (i = 0; i < pArea->num; i++) {
-        pi = &pArea->points[i];
-        pj = &pArea->points[(i + 1) % pArea->num];
+        pi = BEVEC_PTR(pArea->points[i]);
+        pj = BEVEC_PTR(pArea->points[(i + 1) % pArea->num]);
         dx = pj->x - pi->x;
         dz = pj->z - pi->z;
         pt[0] = pi;
@@ -1280,7 +1280,7 @@ void CameraControl::CalcAim(CameraCut* pCdat)
         break;
     default:
         if (pCdat->flags & 1) {
-            PSVECAdd(&pPL->pos, &pCdat->aim_ofs, &Aim);
+            PSVECAdd(&pPL->pos, BEVEC_PTR(pCdat->aim_ofs), &Aim);
         } else {
             PSVECAdd(&pPL->pos, &offset0, &Aim);
         }
@@ -2132,13 +2132,13 @@ void searchRail(CameraBSpline* bs, CameraCut* cut, Vec* aim, int)
         f32 dot0;
         f32 prod;
 
-        PSVECSubtract(&cut->at[i + 1], &cut->at[i], &d);
+        PSVECSubtract(BEVEC_PTR(cut->at[i + 1]), BEVEC_PTR(cut->at[i]), &d);
         d.y = 0.0f;
-        PSVECSubtract(aim, &cut->at[i], &v);
+        PSVECSubtract(aim, BEVEC_PTR(cut->at[i]), &v);
         v.y = 0.0f;
         dot0 = PSVECDotProduct(&d, &v);
         s = dot0 / PSVECMag(&d);
-        PSVECSubtract(aim, &cut->at[i + 1], &v);
+        PSVECSubtract(aim, BEVEC_PTR(cut->at[i + 1]), &v);
         v.y = 0.0f;
         dot = PSVECDotProduct(&d, &v);
         dot = dot / PSVECMag(&d);
@@ -2146,7 +2146,7 @@ void searchRail(CameraBSpline* bs, CameraCut* cut, Vec* aim, int)
         if (prod < 0.0f) {
             d.y = cut->at[i + 1].y - cut->at[i].y;
             PSVECScale(&d, &v, s / PSVECMag(&d));
-            PSVECAdd(&v, &cut->at[i], &v);
+            PSVECAdd(&v, BEVEC_PTR(cut->at[i]), &v);
             dist = PSVECDistance(aim, &v);
             if (dist < min) {
                 min = dist;
@@ -2161,7 +2161,7 @@ void searchRail(CameraBSpline* bs, CameraCut* cut, Vec* aim, int)
         int seg = 0;
 
         for (i = 0; i < cut->num; i++) {
-            PSVECSubtract(aim, &cut->at[i], &d);
+            PSVECSubtract(aim, BEVEC_PTR(cut->at[i]), &d);
             dist = PSVECMag(&d);
             if (dist < min2) {
                 min2 = dist;
@@ -2176,7 +2176,7 @@ void searchRail(CameraBSpline* bs, CameraCut* cut, Vec* aim, int)
         f32 min2 = 10000000000.0f;
 
         for (i = 0; i < cut->num; i++) {
-            PSVECSubtract(aim, &cut->at[i], &d);
+            PSVECSubtract(aim, BEVEC_PTR(cut->at[i]), &d);
             dist = PSVECMag(&d);
             if (dist < min2) {
                 min2 = dist;

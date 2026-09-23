@@ -54,8 +54,8 @@ void cActionButton::move()
         return;
     }
     for (tag = m_ot[15]; tag != 0xFFFFFFFF; tag = w->tag) {
-        w = (ActBtnWork*) (tag | 0x80000000);
-        if ((s32) tag >= 0) {
+        w = (ActBtnWork*) (OT_PTR(tag));
+        if (OT_IS_SLOT(tag)) {
             continue;
         }
         if (w->flags & ACTCTR_NO_EXEC) {

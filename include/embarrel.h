@@ -13,13 +13,13 @@ struct EmiEntry {
     u8 sub;               // 0x01  sub type (emrock: event flag select / escape goal side)
     u8 state;             // 0x02  emrock emRockAtkScrCk: 3 once the trigger fired
     u8 pad_3;
-    Vec pos;              // 0x04
-    f32 rotY;             // 0x10  facing (em10 hide / goto points: Muku towards the player, em->rot.y on arrival)
+    BeVec pos;            // 0x04
+    be_f32 rotY;          // 0x10  facing (em10 hide / goto points: Muku towards the player, em->rot.y on arrival)
     u8 pad_14[0x40 - 0x14];
 };
 
 struct EmiData {
-    int n;                // 0x00  number of entries
+    be_s32 n;             // 0x00  number of entries
     u8 pad_4[4];
     EmiEntry entry[1];    // 0x08
 };

@@ -424,7 +424,7 @@ void VibSetDataCore(VibData* d, u32 flag)
 // Plays pattern `no` of a rumble table (damage / weapon / event tables in the archives).
 void VibSetData(VibDataTbl* t, u32 no, u32 type)
 {
-    u32* ofs = t->ofs;
+    be_u32* ofs = t->ofs;
     if (no < t->num && ofs[no]) {
         VibSetDataCore((VibData*) (ofs[no] + (u32) t), type);
     }

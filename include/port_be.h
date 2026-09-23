@@ -16,19 +16,31 @@ typedef f32 be_f32;
 #define FILE_U32(x) (u32) x
 #define FILE_U16(x) (u16) x
 #define FILE_S16(x) (s16) x
+#define FILE_OFS(p, base) (u8*) p - (u8*) base  // a pointer back to its file offset (calcTplOffset)
+#define FILE_PTR(p) (u8*) p                     // a file offset held in a pointer field, as a byte offset
+#define VARG(x) x                               // a be_ field passed through a variable argument list
 #ifndef RE4_PORT
 #define IS_RELOCATED(p) (s32) p < 0     // pointers into MEM1 are negative, file offsets are not
 #define NOT_RELOCATED(p) (s32) p >= 0
+#define IS_RELOCATED_I(p) (int) p < 0
+#define NOT_RELOCATED_I(p) (int) p >= 0
 #else
 #define IS_RELOCATED(p) GC_PTR_OK(p)
 #define NOT_RELOCATED(p) !GC_PTR_OK(p)
+#define IS_RELOCATED_I(p) GC_PTR_OK(p)
+#define NOT_RELOCATED_I(p) !GC_PTR_OK(p)
 #endif
 #else
 #define FILE_U32(x) __builtin_bswap32((u32) (x))
 #define FILE_U16(x) ((u16) __builtin_bswap16((u16) (x)))
 #define FILE_S16(x) ((s16) __builtin_bswap16((u16) (x)))
+#define FILE_OFS(p, base) (u8*) __builtin_bswap32((u32) ((u8*) (p) - (u8*) (base)))
+#define FILE_PTR(p) (u8*) __builtin_bswap32((u32) (p))
+#define VARG(x) (int) (x)
 #define IS_RELOCATED(p) GC_PTR_OK(p)
 #define NOT_RELOCATED(p) !GC_PTR_OK(p)
+#define IS_RELOCATED_I(p) GC_PTR_OK(p)
+#define NOT_RELOCATED_I(p) !GC_PTR_OK(p)
 
 class be_u32 {
     u32 raw;
@@ -90,6 +102,7 @@ public:
     be_f32& operator+=(f32 v) { return *this = (f32) *this + v; }
     be_f32& operator-=(f32 v) { return *this = (f32) *this - v; }
     be_f32& operator*=(f32 v) { return *this = (f32) *this * v; }
+    be_f32& operator/=(f32 v) { return *this = (f32) *this / v; }
 };
 #endif
 

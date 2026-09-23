@@ -13,6 +13,28 @@
 typedef struct {
     f32 x, y, z;
 } Vec;
+// A Vec in file data: big-endian components (port_be.h); the matching build sees a Vec.
+#ifdef RE4_PORT
+struct BeVec {
+    be_f32 x, y, z;
+    operator Vec() const { Vec v; v.x = x; v.y = y; v.z = z; return v; }
+    BeVec& operator=(const Vec& v) { x = v.x; y = v.y; z = v.z; return *this; }
+};
+// The address of a file vector where a Vec* is wanted (a read-only argument): the port hands over
+// a converted copy (a small ring of them, so several can sit in one call).
+static inline Vec* port_bevec_ptr(const BeVec& v)
+{
+    static Vec ring[8];
+    static int next;
+    Vec* r = &ring[next++ & 7];
+    *r = v;
+    return r;
+}
+#define BEVEC_PTR(v) port_bevec_ptr(v)
+#else
+typedef Vec BeVec;
+#define BEVEC_PTR(v) &v
+#endif
 
 typedef f32 Mtx[3][4];
 typedef f32 (*MtxPtr)[4];

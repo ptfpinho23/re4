@@ -151,8 +151,8 @@ u32* scenarioGetOtAddr(u32* pSceOt)
     u32 v;
 
     while ((v = *pSceOt) != 0xFFFFFFFF) {
-        pSceOt = (u32*) (v | 0x80000000);
-        if ((s32) v < 0) {
+        pSceOt = (u32*) (OT_PTR(v));
+        if (OT_IS_WORK(v)) {
             return pSceOt;
         }
     }
@@ -452,8 +452,8 @@ void SceExecCheckCondition()
         return;
     }
     do {
-        c = (SceCond*) (v | 0x80000000);
-        if ((s32) v < 0) {
+        c = (SceCond*) (OT_PTR(v));
+        if (OT_IS_WORK(v)) {
             if (SceExecCheckCondition_sub(c) == 1) {
                 if (c->func != 0) {
                     SceExec(c->prio, c->func, (int) c->arg, c->flag, SCE_PRIO_DEF_2, 0);

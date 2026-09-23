@@ -64,7 +64,7 @@ int Espgen44_SetFreeWork(EspgenWork* pGen, EspGenWork* pSeq, EspSeqData* pSeqHed
         int level = (s8) pSeq->Work8[0] * 100 + 100;
         f32 scale = pSeq->Size_base_x * 0.005f;
         int kind = pSeq->Work8[1];
-        Filter06SetParam(level, pSeq->Col_start_r, pSeq->Col_start_g, pSeq->Col_start_b, pSeq->Col_start_a, pSeq->Col_d_a, 0.0f, &pSeq->Speed, &pSeq->R_speed, scale,
+        Filter06SetParam(level, pSeq->Col_start_r, pSeq->Col_start_g, pSeq->Col_start_b, pSeq->Col_start_a, pSeq->Col_d_a, 0.0f, BEVEC_PTR(pSeq->Speed), BEVEC_PTR(pSeq->R_speed), scale,
                          kind);
         break;
     }

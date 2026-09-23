@@ -189,8 +189,8 @@ struct SceAtReleaseModel {
 // Data file headers.
 struct SceAtFileHead {
     char magic[4];    // 0x00  "AEV" / "ITA"
-    u16 version;      // 0x04
-    u16 num;          // 0x06
+    be_u16 version;   // 0x04
+    be_u16 num;       // 0x06
     u8 pad_8[8];
     SceAtWork work[1];  // 0x10
 };
@@ -295,7 +295,7 @@ void SceAtInit(void* pHeader, void* pHeader_i)
         } else if (((SceAtFileHead*) pHeader)->version != 0x104) {
             pLog->err(0, 0, "SceAt DATA IS OLD VERSION");
         } else {
-            pS->pAtData = pHeader;
+            pS->pAtData = PORT_FIX(port_fix_sce_at, pHeader);
             pS->pAtWork = (u32) ((u8*) pHeader + 0x10);
             for (i = ((SceAtFileHead*) pS->pAtData)->num - 1; i >= 0; i--) {
                 SceAtWork* w = (SceAtWork*) (i * sizeof(SceAtWork) + pS->pAtWork);
@@ -310,7 +310,7 @@ void SceAtInit(void* pHeader, void* pHeader_i)
         } else if (((SceAtFileHead*) pHeader_i)->version != 0x105) {
             pLog->err(0, 0, "SceItem DATA IS OLD VERSION");
         } else {
-            pS->pItemData = pHeader_i;
+            pS->pItemData = PORT_FIX(port_fix_sce_at, pHeader_i);
             pS->pItemWork = (u32) ((u8*) pHeader_i + 0x10);
             for (i = ((SceAtFileHead*) pS->pItemData)->num - 1; i >= 0; i--) {
                 SceAtWork* w;
@@ -335,8 +335,8 @@ SceAtWork* sceAtGetOtAddr(SceAtWork* p)
     u32 v;
 
     while ((v = p->next) != 0xFFFFFFFF) {
-        p = (SceAtWork*) (v | 0x80000000);
-        if ((s32) v < 0) {
+        p = (SceAtWork*) (OT_PTR(v));
+        if (OT_IS_WORK(v)) {
             return p;
         }
     }

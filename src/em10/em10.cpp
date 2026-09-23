@@ -25603,7 +25603,7 @@ extern "C" int em10HideRtnCk(cEm10* em)
                     continue;
                 }
             }
-            ang = Muku(&e->pos, &pPL->pos, e->rotY, 3.1415927f);
+            ang = Muku(BEVEC_PTR(e->pos), &pPL->pos, e->rotY, 3.1415927f);
             a = fabsf(ang);
             if (a > 1.0471976f) {
                 continue;
@@ -25617,7 +25617,7 @@ extern "C" int em10HideRtnCk(cEm10* em)
                 }
             }
             PSMTXRotRad(m, 'y', e->rotY);
-            TransMatrix(m, &e->pos);
+            TransMatrix(m, BEVEC_PTR(e->pos));
             PSMTXMultVec(m, &em10_hide_ofs_r, &v);
             {
                 f32 dx = v.x - em->pos.x;
@@ -25646,7 +25646,7 @@ extern "C" int em10HideRtnCk(cEm10* em)
                     continue;
                 }
             }
-            ang = Muku(&e->pos, &pPL->pos, e->rotY, 3.1415927f);
+            ang = Muku(BEVEC_PTR(e->pos), &pPL->pos, e->rotY, 3.1415927f);
             a = fabsf(ang);
             if (a > 1.0471976f) {
                 continue;
@@ -25660,7 +25660,7 @@ extern "C" int em10HideRtnCk(cEm10* em)
                 }
             }
             PSMTXRotRad(m, 'y', e->rotY);
-            TransMatrix(m, &e->pos);
+            TransMatrix(m, BEVEC_PTR(e->pos));
             PSMTXMultVec(m, &em10_hide_ofs_l, &v);
             {
                 f32 dx = v.x - em->pos.x;
@@ -25688,7 +25688,7 @@ extern "C" int em10HideRtnCk(cEm10* em)
                     continue;
                 }
             }
-            ang = Muku(&e->pos, &pPL->pos, e->rotY, 3.1415927f);
+            ang = Muku(BEVEC_PTR(e->pos), &pPL->pos, e->rotY, 3.1415927f);
             a = fabsf(ang);
             if (a > 1.0471976f) {
                 continue;
@@ -25739,7 +25739,7 @@ int em10HideRtnCk2(cEm10* em)
                     continue;
                 }
             }
-            ang = Muku(&e->pos, &pPL->pos, e->rotY, 3.1415927f);
+            ang = Muku(BEVEC_PTR(e->pos), &pPL->pos, e->rotY, 3.1415927f);
             a = fabsf(ang);
             if (a > 1.0471976f) {
                 continue;
@@ -25767,7 +25767,7 @@ int em10HideRtnCk2(cEm10* em)
                     continue;
                 }
             }
-            ang = Muku(&e->pos, &pPL->pos, e->rotY, 3.1415927f);
+            ang = Muku(BEVEC_PTR(e->pos), &pPL->pos, e->rotY, 3.1415927f);
             a = fabsf(ang);
             if (a > 1.0471976f) {
                 continue;
@@ -25798,7 +25798,7 @@ int em10HideRtnCk2(cEm10* em)
                     continue;
                 }
             }
-            ang = Muku(&e->pos, &pPL->pos, e->rotY, 3.1415927f);
+            ang = Muku(BEVEC_PTR(e->pos), &pPL->pos, e->rotY, 3.1415927f);
             a = fabsf(ang);
             if (a > 1.0471976f) {
                 continue;
@@ -26226,7 +26226,7 @@ extern "C" void em10SetTakeawayPos(cEm10* em)
             if (e->pad_3 != 0) {
                 continue;
             }
-            if (!RouteCkConnectPosCk(&em->pos, &e->pos)) {
+            if (!RouteCkConnectPosCk(&em->pos, BEVEC_PTR(e->pos))) {
                 continue;
             }
             if (found == -1) {
@@ -26235,13 +26235,13 @@ extern "C" void em10SetTakeawayPos(cEm10* em)
                 bestD = (em->pos.x - e->pos.x) * (em->pos.x - e->pos.x) +
                         (em->pos.y - e->pos.y) * (em->pos.y - e->pos.y) +
                         (em->pos.z - e->pos.z) * (em->pos.z - e->pos.z);
-                a = GetXZAngle(&em->pos, &e->pos);
+                a = GetXZAngle(&em->pos, BEVEC_PTR(e->pos));
                 bestAng = fabsf(Muku(&em->pos, &pPL->pos, a, 3.1415927f));
             } else {
                 d = (em->pos.x - e->pos.x) * (em->pos.x - e->pos.x) +
                     (em->pos.y - e->pos.y) * (em->pos.y - e->pos.y) +
                     (em->pos.z - e->pos.z) * (em->pos.z - e->pos.z);
-                a = GetXZAngle(&em->pos, &e->pos);
+                a = GetXZAngle(&em->pos, BEVEC_PTR(e->pos));
                 ang = fabsf(Muku(&em->pos, &pPL->pos, a, 3.1415927f));
                 if (ang < 1.5707964f && bestAng < ang) {
                     best = e->pos;
@@ -26508,7 +26508,7 @@ int em10GotoPosCk(cEm10* em)
             if (!(em->flag & 0x40)) {
                 w->Be_flg &= ~0x100;
             }
-            em->setGoto(&f->pos, 0xC);
+            em->setGoto(BEVEC_PTR(f->pos), 0xC);
             return 1;
         }
     }

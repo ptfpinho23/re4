@@ -44,8 +44,8 @@ u32* cBlock::getOtAddr()
     u32 v;
 
     while ((v = *pOt) != 0xFFFFFFFF) {
-        pOt = (u32*) (v | 0x80000000);
-        if ((s32) v < 0) {
+        pOt = (u32*) (OT_PTR(v));
+        if (OT_IS_WORK(v)) {
             return pOt;
         }
     }
@@ -84,7 +84,7 @@ void cBlock::roomInit(void* data)
         pLog->err(0, 0, "BLOCK AREA DATA IS OLD VERSION");
         return;
     }
-    pData = h;
+    pData = PORT_FIX(port_fix_block, h);
     nBlock = h->nBlock;
     pLink = (BlockLink*) ((u8*) h + h->ofsLink);
     pArea = (BlockArea*) ((u8*) h + h->ofsArea);

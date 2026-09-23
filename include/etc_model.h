@@ -126,17 +126,17 @@ enum ETCMODEL_ID {
 // One room etc model record (0x28 bytes, EtcModelListSet steps through them) handed to the
 // Et*_init functions (EtcModel.cpp, et00.cpp).
 struct EtcSetData {
-    u16 id;          // 0x00  ETCMODEL_ID (EtcModelSet switch, 0x00..0x67)
+    be_u16 id;       // 0x00  ETCMODEL_ID (EtcModelSet switch, 0x00..0x67)
     union {
-        u16 no;      // 0x02  g_EtcTbl slot (< 0x40)
+        be_u16 no;   // 0x02  g_EtcTbl slot (< 0x40); the port's be_u16 keeps the file bytes, so `type` stays its low byte
         struct {
             u8 pad_2;
             u8 type; // 0x03  low byte of `no`: the etc number the Set* functions take (WindowData row)
         };
     };
     u8 pad_4[0x10 - 0x4];
-    Vec ang;         // 0x10
-    Vec pos;         // 0x1C
+    BeVec ang;       // 0x10
+    BeVec pos;       // 0x1C
 };
 
 // EtcModel.cpp is C++ but exports its functions with C linkage (unmangled names in the DOL).

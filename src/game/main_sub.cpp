@@ -464,15 +464,15 @@ void DrawTpl(TEXPalette* tpl, int x, int y, int w, int h)
     if (!VALID_PTR(desc)) {
         return;
     }
-    if ((s32) desc->textureHeader >= 0) {
-        desc->textureHeader = (TEXHeader*) ((u8*) tpl + (u32) desc->textureHeader);
+    if (NOT_RELOCATED(desc->textureHeader)) {
+        desc->textureHeader = (TEXHeader*) ((u8*) tpl + FILE_U32(desc->textureHeader));
         if (!VALID_PTR(desc->textureHeader)) {
             return;
         }
-        desc->CLUTHeader = (CLUTHeader*) ((u8*) tpl + (u32) desc->CLUTHeader);
-        desc->textureHeader->data = (u8*) tpl + (u32) desc->textureHeader->data;
-        desc->CLUTHeader->data = (u8*) tpl + (u32) desc->CLUTHeader->data;
-        if ((s32) desc->textureHeader >= 0) {
+        desc->CLUTHeader = (CLUTHeader*) ((u8*) tpl + FILE_U32(desc->CLUTHeader));
+        desc->textureHeader->data = (u8*) tpl + FILE_U32(desc->textureHeader->data);
+        desc->CLUTHeader->data = (u8*) tpl + FILE_U32(desc->CLUTHeader->data);
+        if (NOT_RELOCATED(desc->textureHeader)) {
             return;
         }
     }

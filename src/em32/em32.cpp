@@ -3928,7 +3928,7 @@ int em32StepUpCk(cEm32* em)
             36000000.0f) {
             continue;
         }
-        if (!(fabsf(Muku2(ang, GetXZAngle(&em->pos, &e->pos), 3.14159274f)) > 1.04719758f)) {
+        if (!(fabsf(Muku2(ang, GetXZAngle(&em->pos, BEVEC_PTR(e->pos)), 3.14159274f)) > 1.04719758f)) {
             w->stepPos = e->pos;
             EmRoutineSet(em, 1, 0x13, sub, sub);
             return 1;
@@ -3988,7 +3988,7 @@ int em32StepUpCk2(cEm32* em)
         if (EatMgr.hitCheck(&a, &b, 0, 0, 0, 0)) {
             continue;
         }
-        if ((w->flags & 0x1000) && fabsf(Muku2(ang, GetXZAngle(&em->pos, &e->pos), 3.14159274f)) > 1.04719758f) {
+        if ((w->flags & 0x1000) && fabsf(Muku2(ang, GetXZAngle(&em->pos, BEVEC_PTR(e->pos)), 3.14159274f)) > 1.04719758f) {
             continue;
         }
         best = d;
@@ -4061,7 +4061,7 @@ int em32StepUpCk3(cEm32* em)
         if ((e->pos.x < 6921.0f && em->pos.x > 6921.0f) || (e->pos.x > 6921.0f && em->pos.x < 6921.0f)) {
             continue;
         }
-        if (!(fabsf(Muku2(ang, GetXZAngle(&em->pos, &e->pos), 3.14159274f)) > 1.04719758f)) {
+        if (!(fabsf(Muku2(ang, GetXZAngle(&em->pos, BEVEC_PTR(e->pos)), 3.14159274f)) > 1.04719758f)) {
             w->stepPos = e->pos;
             EmRoutineSet(em, 1, 0x13, sub, sub);
             return 1;
@@ -4138,7 +4138,7 @@ int em32TunnelAtkCk(cEm32* em)
             continue;
         }
         PSMTXRotRad(m, 'y', e->rotY);
-        TransMatrix(m, &e->pos);
+        TransMatrix(m, BEVEC_PTR(e->pos));
         v.x = 0.0f;
         v.y = 0.0f;
         v.z = 0.0f;
@@ -4282,9 +4282,9 @@ int em32CeilingAtkCk(cEm32* em)
         if (d > 25000000.0f) {
             continue;
         }
-        ang = GetXZAngle(&e->pos, &w->plPos);
+        ang = GetXZAngle(BEVEC_PTR(e->pos), &w->plPos);
         PSMTXRotRad(m, 'y', ang);
-        TransMatrix(m, &e->pos);
+        TransMatrix(m, BEVEC_PTR(e->pos));
         v.x = 0.0f;
         v.y = 0.0f;
         v.z = 2000.0f;
@@ -4597,7 +4597,7 @@ void em32GetStepDownPos(cEm32* em)
         }
         best = d;
         // stepPos through a byte pointer: `&w->stepPos` shrinks the loop by 6 instructions
-        memcpy((u8*) w + 0x79C, &e->pos, sizeof(Vec));
+        memcpy((u8*) w + 0x79C, BEVEC_PTR(e->pos), sizeof(Vec));
     }
 }
 

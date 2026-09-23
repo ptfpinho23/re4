@@ -116,14 +116,14 @@ static inline void fadeSetG(int no, u32 time, u32 z, int late)
 
 // Option archive (pG->pOptionData): offsets to the died demo id data.
 struct OptionArc {
-    u32 x0;
-    u32 x4;
-    u32 x8;
-    u32 xC;
-    u32 ofs_10;   // 0x10  died demo id textures
-    u32 ofs_14;   // 0x14  "you are dead" id data
-    u32 ofs_18;   // 0x18  continue / reset menu id data
-    u32 ofs_1C;   // 0x1C  "you are dead" id data with the sub character alive
+    be_u32 x0;
+    be_u32 x4;
+    be_u32 x8;
+    be_u32 xC;
+    be_u32 ofs_10;   // 0x10  died demo id textures
+    be_u32 ofs_14;   // 0x14  "you are dead" id data
+    be_u32 ofs_18;   // 0x18  continue / reset menu id data
+    be_u32 ofs_1C;   // 0x1C  "you are dead" id data with the sub character alive
 };
 
 // Game task work (`Game`).

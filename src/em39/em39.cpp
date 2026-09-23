@@ -1347,7 +1347,7 @@ static void em39_R1_Sit(cEm39* em)
                 em->ang.y += Muku(&em->pos, &pPL->pos, em->ang.y, 0.09817477f);
                 em->ang.y = LIMIT_ANGLE(em->ang.y);
             } else {
-                em->ang.y += Muku(&em->pos, &w->pGotoPoint->pos, em->ang.y, 0.7853982f);
+                em->ang.y += Muku(&em->pos, BEVEC_PTR(w->pGotoPoint->pos), em->ang.y, 0.7853982f);
                 em->ang.y = LIMIT_ANGLE(em->ang.y);
             }
         }
@@ -1450,7 +1450,7 @@ static void em39_R1_WallWait(cEm39* em)
             if (w->pGotoPoint) {
                 f32 ang;
 
-                PosToPos(&em->pos, &w->pGotoPoint->pos, &em->pos, 0.1f);
+                PosToPos(&em->pos, BEVEC_PTR(w->pGotoPoint->pos), &em->pos, 0.1f);
                 ang = LIMIT_ANGLE(w->pGotoPoint->rotY + PI);
                 em->ang.y += Muku2(em->ang.y, ang, 0.39269908f);
                 em->ang.y = LIMIT_ANGLE(em->ang.y);
@@ -7146,14 +7146,14 @@ int em39JumpUpCk2(cEm39* em)
             if (e->pad_3 != f->pad_3) {
                 continue;
             }
-            if (fabsf(Muku(&em->pos, &f->pos, em->ang.y, PI)) > 0.2617994f) {
+            if (fabsf(Muku(&em->pos, BEVEC_PTR(f->pos), em->ang.y, PI)) > 0.2617994f) {
                 continue;
             }
             ang = GetXZAngle(&em->pos, &w->Go_pos);
-            if (fabsf(Muku2(ang, GetXZAngle(&em->pos, &f->pos), PI)) > 0.2617994f) {
+            if (fabsf(Muku2(ang, GetXZAngle(&em->pos, BEVEC_PTR(f->pos)), PI)) > 0.2617994f) {
                 continue;
             }
-            w->Target_dir = GetXZAngle(&em->pos, &f->pos);
+            w->Target_dir = GetXZAngle(&em->pos, BEVEC_PTR(f->pos));
             w->Target_pos = f->pos;
             EmRoutineSet(em, state, 0x15, sub, sub);
             return 1;
@@ -7209,7 +7209,7 @@ int em39JumpUpCk3(cEm39* em)
             if (e->pad_3 != f->pad_3) {
                 continue;
             }
-            w->Target_dir = GetXZAngle(&em->pos, &f->pos);
+            w->Target_dir = GetXZAngle(&em->pos, BEVEC_PTR(f->pos));
             w->Target_pos = f->pos;
             EmRoutineSet(em, state, 0x16, 0, 0);
             return 1;
@@ -7315,7 +7315,7 @@ void em39BlendMotSet(cEm39* em, void* m0, void* m1, void* m2, void* seq0, void* 
     (w)->pGotoPoint = e;                                                                           \
     (em)->dmg.m_Timer = 2;                                                                              \
     AtariOff(&(em)->atari, 0xFCFF);                                                                \
-    (em)->setPos(&(e)->pos);                                                                       \
+    (em)->setPos(BEVEC_PTR((e)->pos));                                                                       \
     (em)->pos = (e)->pos;                                                                          \
     (em)->pos_old = (em)->pos;
 
@@ -7359,7 +7359,7 @@ int em39AppearCk(cEm39* em)
         if (w->Old_no != -1 && retry) {
             u32 ofs = w->Old_no * 0x40 + 8;
 
-            if ((*(u32*) ((u32) EM39_EMI + ofs) & 0x00FF00FF) == (*(u32*) e & 0x00FF00FF)) {
+            if ((FILE_U32(*(u32*) ((u32) EM39_EMI + ofs)) & 0x00FF00FF) == (FILE_U32(*(u32*) e) & 0x00FF00FF)) {
                 continue;
             }
         }
@@ -7396,7 +7396,7 @@ int em39AppearCk(cEm39* em)
             if (em39AreaCk(em, 1, 1, e->pad_3) == 0) {
                 continue;
             }
-            if (fabsf(Muku(&pPL->pos, &e->pos, pPL->ang.y, PI)) > 0.7853982f) {
+            if (fabsf(Muku(&pPL->pos, BEVEC_PTR(e->pos), pPL->ang.y, PI)) > 0.7853982f) {
                 continue;
             }
             found = 0;
@@ -7440,7 +7440,7 @@ int em39AppearCk(cEm39* em)
             w->pGotoPoint = (EmiEntry*) st;
             em->dmg.m_Timer = 2;
             AtariOff(&em->atari, 0xFCFF);
-            em->setPos(&e->pos);
+            em->setPos(BEVEC_PTR(e->pos));
             em->pos = e->pos;
             em->pos_old = em->pos;
             em->ang.y = e->rotY;

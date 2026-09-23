@@ -1066,7 +1066,7 @@ int Espgen45_SetFreeWork(EspgenWork* pGen, EspGenWork* pSeq, EspSeqData* pSeqHed
     }
     rate = 1.0f - (f32) (int) pSeq->WorkSp8[2] / 255.0f;
     p->rotY = pSeq->WorkSp8[2];
-    PSVECScale(&pSeq->Ang, &r, 6.28f / 360.0f);
+    PSVECScale(BEVEC_PTR(pSeq->Ang), &r, 6.28f / 360.0f);
     if (SetWaterWork45(pGen, (Vec*) &pSeq->Pos.x, &r, pSeq->Size_base_x, nx, ny, rate) != 0) {
         p->col.r = pSeq->Col_start_r;
         p->col.g = pSeq->Col_start_g;

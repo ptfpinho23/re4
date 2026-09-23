@@ -32,7 +32,7 @@ struct FuncPathData {
     s8 k;         // 0x00  spline order
     u8 pad_1[6];
     s8 n;         // 0x07  control point count
-    Vec pos[1];   // 0x08
+    BeVec pos[1];   // 0x08
 };
 
 // Parametrised B-spline (id_sys path1).

@@ -52,7 +52,7 @@ struct ArcFile {
 // Player archive at pG->pPlArc: a table of byte offsets to the player's sub-files (models, textures,
 // motions, faces...). The pl_* units index it directly; the pointer is `ofs + (u32) arc`.
 struct PlArc {
-    u32 ofs[0x100];   // pl_knife indexes up to 0x87
+    be_u32 ofs[0x100];   // pl_knife indexes up to 0x87
 };
 #define PL_ARC_PTR(arc, no) ((void*) ((arc)->ofs[no] + (u32) (arc)))
 // Model / motion data `no` of the player archive.
@@ -66,7 +66,7 @@ struct PlArc {
 
 // Room archive at pG->pRoomArc: offsets to its sub-files (GetDataExt finds them by tag; ctrl14 indexes it).
 struct RoomArc {
-    u32 ofs[0x10];
+    be_u32 ofs[0x10];
 };
 #define ROOM_ARC_PTR(arc, no) ((void*) (((RoomArc*) (arc))->ofs[no] + (u32) (arc)))
 
@@ -103,14 +103,14 @@ struct EmListData {
     u8 id;          // 0x01  enemy id (0 = empty entry, 0xF / 0x25 are created at the back of the work array)
     u8 type;        // 0x02  -> cModel::type
     u8 set;          // 0x03  -> cEm::x38D  -> cEm::set
-    u32 flag;     // 0x04  -> cEm::flags_3C8  -> cEm::flag (PS2 EM_LIST.flag)
-    u16 hp;         // 0x08
+    be_u32 flag;  // 0x04  -> cEm::flags_3C8  -> cEm::flag (PS2 EM_LIST.flag)
+    be_u16 hp;      // 0x08
     u8 emset_no;//  (PS2 EM_LIST.emset_no; unused on GC, the list index is stored)
     u8 Character;          // 0x0B  -> cEm::x3D0  -> cEm::Character (PS2 EM_LIST.Character)
-    s16 pos[3];     // 0x0C  * 10
-    s16 rot[3];     // 0x12  * (pi / 0x4000)
-    u16 room;       // 0x18  stage << 8 | room
-    s16 Guard_r;        // 0x1A  * 1000 -> cEm::x3CC  -> cEm::Guard_r (PS2 EM_LIST.Guard_r)
+    be_s16 pos[3];  // 0x0C  * 10
+    be_s16 rot[3];  // 0x12  * (pi / 0x4000)
+    be_u16 room;    // 0x18  stage << 8 | room
+    be_s16 Guard_r;     // 0x1A  * 1000 -> cEm::x3CC  -> cEm::Guard_r (PS2 EM_LIST.Guard_r)
     u8 pad_1C[4];
 };
 

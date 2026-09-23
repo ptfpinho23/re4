@@ -76,20 +76,20 @@ struct IdData {
     u8 rotAxis;      // 0x0F
     u8 dir;          // 0x10
     u8 pad_11[3];
-    Vec pos;         // 0x14
-    Vec vtx[4];      // 0x20
-    f32 sizeX;       // 0x50
-    f32 sizeY;       // 0x54
+    BeVec pos;         // 0x14
+    BeVec vtx[4];      // 0x20
+    be_f32 sizeX;       // 0x50
+    be_f32 sizeY;       // 0x54
     u8 col0[4];      // 0x58
     // version 1
-    Vec rot;         // 0x5C
+    BeVec rot;         // 0x5C
     u8 blendType;    // 0x68
     u8 transType;    // 0x69
     u8 maskId;       // 0x6A
     u8 flags_7F;     // 0x6B
     u8 transSub;     // 0x6C
     u8 pad_6D[3];
-    u32 ofs[6];      // 0x70  path0, path1, curve[4] (offsets from the table start, 0 = none)
+    be_u32 ofs[6];      // 0x70  path0, path1, curve[4] (offsets from the table start, 0 = none)
 };
 
 struct IdData2 {
@@ -109,20 +109,20 @@ struct IdData2 {
     u8 rotAxis;      // 0x0F
     u8 dir;          // 0x10
     u8 pad_11[3];
-    Vec pos;         // 0x14
-    Vec vtx[4];      // 0x20
-    f32 sizeX;       // 0x50
-    f32 sizeY;       // 0x54
+    BeVec pos;         // 0x14
+    BeVec vtx[4];      // 0x20
+    be_f32 sizeX;       // 0x50
+    be_f32 sizeY;       // 0x54
     u8 col0[4];      // 0x58
     u8 col1[4];      // 0x5C
-    Vec rot;         // 0x60
+    BeVec rot;         // 0x60
     u8 blendType;    // 0x6C
     u8 transType;    // 0x6D
     u8 maskId;       // 0x6E
     u8 flags_7F;     // 0x6F
     u8 transSub;     // 0x70
     u8 pad_71[3];
-    u32 ofs[6];      // 0x74
+    be_u32 ofs[6];      // 0x74
 };
 
 // Id data table header: version string, entry count, entries from 0x08.

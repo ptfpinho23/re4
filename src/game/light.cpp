@@ -1533,10 +1533,10 @@ cLightEnv* cLit::getCut(u16 no)
 
     u32* ofs = (u32*) (this + 1);
 
-    if (no >= CutNum || ofs[no] == 0) {
+    if (no >= CutNum || FILE_U32(ofs[no]) == 0) {
         return 0;
     }
-    cut = (cLightEnv*) ((u8*) this + ofs[no]);
+    cut = (cLightEnv*) ((u8*) this + FILE_U32(ofs[no]));
     if (!VALID_PTR(cut)) {
         return 0;
     }

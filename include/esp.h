@@ -34,43 +34,43 @@ struct EspGenWork {
     u8 Id;             // 0x01 esp id / generator sub type (PS2 Id)
     u8 Tex_id;         // 0x02 (PS2 Tex_id)
     u8 Type;           // 0x03 (PS2 Type) -> cEsp::m_Type
-    u16 Set_time;      // 0x04 sequence time (espgen10 compares it with the frame counter) (PS2 Set_time)
+    be_u16 Set_time;      // 0x04 sequence time (espgen10 compares it with the frame counter) (PS2 Set_time)
     u8 Parent_no;      // 0x06 event model index (EspEvModList) (PS2 Parent_no)
     u8 Parts_no;       // 0x07 (PS2 Parts_no)
-    u32 Tool_flg;      // 0x08 (PS2 Tool_flg)
-    Vec Pos;           // 0x0C generator position (PS2 Pos)
-    Vec R_pos;         // 0x18 position random range (esp1a: .x/.y min / max distance factor) (PS2 R_pos)
-    Vec Speed;         // 0x24 (PS2 Speed)
-    f32 D_speed;       // 0x30 (PS2 D_speed)
-    Vec R_speed;       // 0x34 (PS2 R_speed)
-    Vec Speed_plus;    // 0x40 acceleration (PS2 Speed_plus)
-    Vec R_speed_plus;  // 0x4C acceleration random range (PS2 R_speed_plus)
-    Vec Ang;           // 0x58 (PS2 Ang)
-    Vec R_ang;         // 0x64 rotation random range (PS2 R_ang)
-    Vec Ang_plus;      // 0x70 rotation speed (PS2 Ang_plus)
-    Vec R_ang_plus;    // 0x7C rotation speed random range (PS2 R_ang_plus)
-    f32 Size_base_x;   // 0x88 (PS2 Size_base_x)
-    f32 Size_base_y;   // 0x8C (PS2 Size_base_y)
-    f32 R_size_base;   // 0x90 (PS2 R_size_base)
-    f32 Size_plus;     // 0x94 (Espgen43: extra z scale, +1) (PS2 Size_plus)
-    f32 D_size_plus;   // 0x98 (PS2 D_size_plus)
+    be_u32 Tool_flg;      // 0x08 (PS2 Tool_flg)
+    BeVec Pos;           // 0x0C generator position (PS2 Pos)
+    BeVec R_pos;         // 0x18 position random range (esp1a: .x/.y min / max distance factor) (PS2 R_pos)
+    BeVec Speed;         // 0x24 (PS2 Speed)
+    be_f32 D_speed;       // 0x30 (PS2 D_speed)
+    BeVec R_speed;       // 0x34 (PS2 R_speed)
+    BeVec Speed_plus;    // 0x40 acceleration (PS2 Speed_plus)
+    BeVec R_speed_plus;  // 0x4C acceleration random range (PS2 R_speed_plus)
+    BeVec Ang;           // 0x58 (PS2 Ang)
+    BeVec R_ang;         // 0x64 rotation random range (PS2 R_ang)
+    BeVec Ang_plus;      // 0x70 rotation speed (PS2 Ang_plus)
+    BeVec R_ang_plus;    // 0x7C rotation speed random range (PS2 R_ang_plus)
+    be_f32 Size_base_x;   // 0x88 (PS2 Size_base_x)
+    be_f32 Size_base_y;   // 0x8C (PS2 Size_base_y)
+    be_f32 R_size_base;   // 0x90 (PS2 R_size_base)
+    be_f32 Size_plus;     // 0x94 (Espgen43: extra z scale, +1) (PS2 Size_plus)
+    be_f32 D_size_plus;   // 0x98 (PS2 D_size_plus)
     u8 Col_start_r;    // 0x9C colour r (PS2 Col_start_r)
     u8 Col_start_g;    // 0x9D colour g
     u8 Col_start_b;    // 0x9E colour b
     u8 Col_start_a;    // 0x9F colour a
-    f32 Col_d_r;       // 0xA0 colour step per frame as 0..1 floats (PS2 Col_d_r)
-    f32 Col_d_g;       // 0xA4
-    f32 Col_d_b;       // 0xA8
-    f32 Col_d_a;       // 0xAC
-    u16 Col_max_cnt;   // 0xB0 (esp_efm: fade start frame) (PS2 Col_max_cnt)
-    u16 Col_start_cnt; // 0xB2 (esp_efm: fade length) (PS2 Col_start_cnt)
-    u16 Pos_start_cnt; // 0xB4 (esp_efm: move start frame) (PS2 Pos_start_cnt)
-    u16 Size_start_cnt; // 0xB6 (esp_efm: scale start frame) (PS2 Size_start_cnt)
-    u16 Life_max;      // 0xB8 (esp_efm: life) (PS2 Life_max)
-    u16 Life_time;     // 0xBA (esp_efm: start frame) (PS2 Life_time)
+    be_f32 Col_d_r;       // 0xA0 colour step per frame as 0..1 floats (PS2 Col_d_r)
+    be_f32 Col_d_g;       // 0xA4
+    be_f32 Col_d_b;       // 0xA8
+    be_f32 Col_d_a;       // 0xAC
+    be_u16 Col_max_cnt;   // 0xB0 (esp_efm: fade start frame) (PS2 Col_max_cnt)
+    be_u16 Col_start_cnt; // 0xB2 (esp_efm: fade length) (PS2 Col_start_cnt)
+    be_u16 Pos_start_cnt; // 0xB4 (esp_efm: move start frame) (PS2 Pos_start_cnt)
+    be_u16 Size_start_cnt; // 0xB6 (esp_efm: scale start frame) (PS2 Size_start_cnt)
+    be_u16 Life_max;      // 0xB8 (esp_efm: life) (PS2 Life_max)
+    be_u16 Life_time;     // 0xBA (esp_efm: start frame) (PS2 Life_time)
     u8 Ptn_no;         // 0xBC (esp_sub: start animation pattern) (PS2 Ptn_no)
     u8 Anm_rate;       // 0xBD (esp_sub: animation speed - 0x20) (PS2 sint8 Anm_rate)
-    u16 Anm_cnt;       // 0xBE (esp_sub: animation counter) (PS2 Anm_cnt)
+    be_u16 Anm_cnt;       // 0xBE (esp_sub: animation counter) (PS2 Anm_cnt)
     u8 Release_time;   // 0xC0 (esp_efm: parent release frame) (PS2 Release_time)
     u8 Groupe_no;      // 0xC1 (PS2 Groupe_no)
     u8 Blend_type;     // 0xC2 (esp_sub: blend type, bl[] index) (PS2 Blend_type)
@@ -81,10 +81,10 @@ struct EspGenWork {
     u8 Del_near;       // 0xC7 (esp_sub: cEsp m_Del_near / 10) (PS2 Del_near)
     u8 Work8[4];       // 0xC8 per-effect byte parameters (SE number, area number, type, ...) (PS2 signed char Work8[4])
     EspGenPrm prm;     // 0xCC .. 0xD4: per-effect integer parameters (word or halfword view) (PS2 int Work32[0..1])
-    u32 xD4;           // 0xD4 (PS2 Work32[2])
-    Vec Vec0;          // 0xD8 per-effect float parameters (esp_efm: obj05 burst centre / obj09 size) (PS2 Vec0)
-    Vec Vec1;          // 0xE4 (esp_efm: bounce) (PS2 Vec1)
-    Vec Vec2;          // 0xF0 (esp_efm: burst centre random range; esp0e .z: visible cone angle in degrees) (PS2 Vec2)
+    be_u32 xD4;           // 0xD4 (PS2 Work32[2])
+    BeVec Vec0;          // 0xD8 per-effect float parameters (esp_efm: obj05 burst centre / obj09 size) (PS2 Vec0)
+    BeVec Vec1;          // 0xE4 (esp_efm: bounce) (PS2 Vec1)
+    BeVec Vec2;          // 0xF0 (esp_efm: burst centre random range; esp0e .z: visible cone angle in degrees) (PS2 Vec2)
     u8 WorkSp8[4];     // 0xFC ([3]: esp_efm obj04 motion type) (PS2 WorkSp8[4])
     // 0x100..0x12C: sequence record tail (records of an EspSeqData are 0x12C bytes)
     u8 pad_100[0x104 - 0x100];
@@ -94,8 +94,8 @@ struct EspGenWork {
     u8 Espgen_type;    // 0x10A (PS2 Espgen_type)
     u8 Espgen_flg;     // 0x10B (PS2 Espgen_flg)
     s8 Espgen_work8[4]; // 0x10C (espgen00/02: [0] wait, [1] count, [2] random seed offset) (PS2 signed char Espgen_work8[4])
-    s16 Espgen_work16[4]; // 0x110 (PS2 Espgen_work16[4])
-    Vec Espgen_vec0;   // 0x118 (espgen02: scale - 1 in 10ths) (PS2 Espgen_vec0)
+    be_s16 Espgen_work16[4]; // 0x110 (PS2 Espgen_work16[4])
+    BeVec Espgen_vec0;   // 0x118 (espgen02: scale - 1 in 10ths) (PS2 Espgen_vec0)
     s8 Espgen_work8_2[4]; // 0x124 (espgen00/02: per-frame D of scale, speed, colour, wait) (PS2 signed char Espgen_work8_2[4])
     u8 Espgen_work8_3[4]; // 0x128 ([1]: espgen02 rotation x in 1/256 turns, [2]: rotation y, [3]: path orientation mode bits) (PS2 Espgen_work8_3)
 };
@@ -103,28 +103,28 @@ struct EspGenWork {
 // Effect sequence data block: 0x30 byte header followed by 0x12C byte records (PS2 cEspSeqHead:
 // data_num[4], Flg, Null_parts_no, Offset, Ang, Ver_no, Core_flg, SeqTbl[]).
 struct EspSeqData {
-    u16 num;           // 0x00 number of records
+    be_u16 num;           // 0x00 number of records
     u8 pad_2[6];
-    u16 flags;         // 0x08
+    be_u16 flags;         // 0x08
     u8 parts;          // 0x0A default parts number (EstSet with no = -1)
     u8 pad_B;
-    Vec pos;           // 0x0C default position (EstSet with pos = NULL)
-    Vec rot;           // 0x18 default rotation in degrees (EstSet with rot = NULL)
+    BeVec pos;           // 0x0C default position (EstSet with pos = NULL)
+    BeVec rot;           // 0x18 default rotation in degrees (EstSet with rot = NULL)
     u8 Ver_no;         // 0x24 file version (t_esp writes 0x10) (PS2 Ver_no)
     u8 pad0;           // 0x25 (PS2 pad0)
-    u16 Core_flg;      // 0x26 (PS2 Core_flg)
-    u32 pad1[2];       // 0x28 (PS2 pad1)
+    be_u16 Core_flg;      // 0x26 (PS2 Core_flg)
+    be_u32 pad1[2];       // 0x28 (PS2 pad1)
     EspGenWork rec[1]; // 0x30
 };
 
 // Texture animation data returned by EspGetAnmAddr (eff_sys.cpp). Partial layout.
 struct EspAnmData {
-    u16 Width;         // 0x00 texture width (PS2 cAnm::Width)
-    u16 Height;        // 0x02 texture height (PS2 cAnm::Height)
-    s16 Cx;            // 0x04 sprite width / centre x (PS2 cAnm::Cx)
-    s16 Cy;            // 0x06 sprite height / centre y (PS2 cAnm::Cy)
+    be_u16 Width;         // 0x00 texture width (PS2 cAnm::Width)
+    be_u16 Height;        // 0x02 texture height (PS2 cAnm::Height)
+    be_s16 Cx;            // 0x04 sprite width / centre x (PS2 cAnm::Cx)
+    be_s16 Cy;            // 0x06 sprite height / centre y (PS2 cAnm::Cy)
     union {
-        u16 Frames;    // 0x08 number of patterns (PS2 cAnm::Frames)
+        be_u16 Frames;    // 0x08 number of patterns (PS2 cAnm::Frames)
         struct {
             u8 x8;
             u8 x9;     // 0x09 low byte of Frames

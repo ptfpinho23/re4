@@ -1654,7 +1654,7 @@ void em2fChangeRoute(cEm2f* em)
         if (e->type != 2) {
             continue;
         }
-        ang = fabsf(Muku(&em->pos, &e->pos, em->ang.y, PI));
+        ang = fabsf(Muku(&em->pos, BEVEC_PTR(e->pos), em->ang.y, PI));
         if (ang > bestAng) {
             continue;
         }
@@ -1676,7 +1676,7 @@ void em2fChangeRoute(cEm2f* em)
         if (prev == 0) {
             continue;
         }
-        if (fabsf(Muku2(GetXZAngle(&prev->pos, &e->pos), em->ang.y, PI)) > PI / 4.0f) {
+        if (fabsf(Muku2(GetXZAngle(BEVEC_PTR(prev->pos), BEVEC_PTR(e->pos)), em->ang.y, PI)) > PI / 4.0f) {
             continue;
         }
         bestAng = ang;

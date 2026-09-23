@@ -53,9 +53,9 @@ struct ReadFile {
 
 // Archive header behind GetDataExt: count, three words, offsets, then 4-byte tags.
 struct DataExtHeader {
-    u32 num;      // 0x00
-    u32 pad_4[3];
-    u32 ofs[1];   // 0x10
+    be_u32 num;      // 0x00
+    be_u32 pad_4[3];
+    be_u32 ofs[1];   // 0x10
 };
 
 extern "C" {
@@ -1015,7 +1015,7 @@ void* GetDataExt(void* pData, const char* pName, int no)
         p += 4;
         if (p[0] == pName[0] && p[1] == pName[1] && p[2] == pName[2]) {
             if (cnt == no) {
-                return (void*) (*(u32*) (i * 4 + (u32) pData + 0x10) + (u32) pData);
+                return (void*) (FILE_U32(*(u32*) (i * 4 + (u32) pData + 0x10)) + (u32) pData);
             }
             cnt++;
         }

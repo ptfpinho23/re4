@@ -71,14 +71,14 @@ struct ModelPart {
     u8 specPow;      // 0x15  specular scale (percent)
     u8 pad_16;
     u8 specTexOrg;   // 0x17  specular texture id when flags bit4 is set
-    u32 size;        // 0x18  byte length of the primitive stream following the header
-    u32 nPoly;       // 0x1C  polygon count (debug statistics)
+    be_u32 size;        // 0x18  byte length of the primitive stream following the header
+    be_u32 nPoly;       // 0x1C  polygon count (debug statistics)
 };
 
 // Header block cModelData::pHead points at (examine: the item's centre offset).
 struct ModelDataHead {
     union {
-        u32 x0;      // 0x00
+        be_u32 x0;      // 0x00
         struct {
             u8 partsNo;   // 0x00  parts the model hangs on when it is not skinned (trans commonModelTrans)
             u8 parentNo;  // 0x01  parts record (model.cpp setPartsParent): parent parts index, 0xFF = the model
@@ -86,7 +86,7 @@ struct ModelDataHead {
             u8 x3;
         };
     };
-    Vec center;      // 0x04  (examine copies it into parts 0's position); parts record: parts position
+    BeVec center;      // 0x04  (examine copies it into parts 0's position); parts record: parts position
 };
 
 // Model data referenced by a bin (game/model.cpp `cModelData`); only the flag word is known.
@@ -98,26 +98,26 @@ struct cModelData {
     void* pWeight;   // 0x14  skinning weights (trans MakeWeightPalette: Weight[x18] or WeightExt[x2A])
     u8 weight_palette_num;  // 0x18  Weight entries of pWeight (trans MakeWeightPalette); <= 1 with nParts == 1: rigid, original arrays
     u8 nParts;       // 0x19  parts count (cModel::setModel copies it into cModel::nParts)
-    u16 displist_num;  // 0x1A  primitive (display list) part count (dbmodule DrawObjWireframe)
+    be_u16 displist_num;  // 0x1A  primitive (display list) part count (dbmodule DrawObjWireframe)
     struct ModelPart* pParts;  // 0x1C  first part header (0x20 bytes + primitive stream)
-    u32 flags;       // 0x20  bit31: s16 tex coords (frac 8), bit30 (0x40000000): SmxGetFlag bit1, bit29: s8 normals
-    u32 nTex;        // 0x24  texture count (trans: must be <= 0xF7)
+    be_u32 flags;       // 0x20  bit31: s16 tex coords (frac 8), bit30 (0x40000000): SmxGetFlag bit1, bit29: s8 normals
+    be_u32 nTex;        // 0x24  texture count (trans: must be <= 0xF7)
     u8 shift;        // 0x28  vertex fixed-point shift (dbmodule: scale = 1 / (1 << shift))
     u8 pad_29;
-    u16 weight_ext_num;  // 0x2A  extended weight entries (> 0xFF: pWeight is a WeightExt table)
-    u32 shapeOfs;    // 0x2C  offset of the shape (vertex delta) table (shape.cpp)
+    be_u16 weight_ext_num;  // 0x2A  extended weight entries (> 0xFF: pWeight is a WeightExt table)
+    be_u32 shapeOfs;    // 0x2C  offset of the shape (vertex delta) table (shape.cpp)
     void* vtxOrig;   // 0x30  original vertex positions (shape.cpp ResetShape source)
     void* nrmOrig;   // 0x34  original vertex normals
-    u16 nVtx;        // 0x38  vertex count (8 bytes each)
-    u16 nNrm;        // 0x3A  normal count
-    u32 version;     // 0x3C  0x20010801 / 0x20030817 / 0x20030818 (model.cpp: the two tables below exist from 0x20030818)
-    u32 blendTbl;    // 0x40  MotionWork::blendTbl (cModel::setJointInfo); a file offset until calcModelAddr relocates it
-    u32 flipTbl;     // 0x44  MotionWork::flip points 4 bytes into it (setJointInfo)
+    be_u16 nVtx;        // 0x38  vertex count (8 bytes each)
+    be_u16 nNrm;        // 0x3A  normal count
+    be_u32 version;     // 0x3C  0x20010801 / 0x20030817 / 0x20030818 (model.cpp: the two tables below exist from 0x20030818)
+    be_u32 blendTbl;    // 0x40  MotionWork::blendTbl (cModel::setJointInfo); a file offset until calcModelAddr relocates it
+    be_u32 flipTbl;     // 0x44  MotionWork::flip points 4 bytes into it (setJointInfo)
 };
 
 // Shape (morph) animation data referenced by cModelInfo::pShape (game/shape.cpp).
 struct ShapeData {
-    u16 nFrame;      // 0x00  frame count (low 14 bits)
+    be_u16 nFrame;      // 0x00  frame count (low 14 bits)
     u8 num;          // 0x02  channel count
     // u8  idx[num]      0x03  shape table index per channel
     // u16 flags[num]    0x03 + num  bit2: active, bits 12-15: interpolation type
@@ -210,7 +210,7 @@ public:
 
 // One sequence key (MotionData sequence table entry / MotionWork::key*).
 struct MotionSeqKey {
-    u16 frame;  // 0x00  motion frame in 10.6 fixed point
+    be_u16 frame;  // 0x00  motion frame in 10.6 fixed point
     u8 Se;      // 0x02  sound number + 1 to play at this key, 0 = none (PS2 SEQUENCE_DATA.Se)
     u8 Free;    // 0x03  free bits: player sound kind (low 3 bits) / object event bits (PS2 SEQUENCE_DATA.Free)
 };
@@ -219,7 +219,7 @@ struct MotionSeqKey {
 //   u16 maxFrame (low 14 bits), u8 nParts, u16 parts[nParts], u8 partsNo[nParts],
 //   4-aligned u32 keyOfs[nParts] (relocated in place to absolute key pointers).
 struct MotionData {
-    u16 maxFrame;  // 0x00
+    be_u16 maxFrame;  // 0x00
     u8 nParts;     // 0x02
 };
 
@@ -229,7 +229,7 @@ struct AttachCamera;   // cam_ctrl.h
 // a blend motion (MotionWork::blend, the enemy works' blendMot) is, and the prefix of cModel::Motion.
 struct MotionWorkSub {
     MotionData* pMot;     // 0x00  NULL = no motion
-    u32* pHermite_data;          // 0x04  per parts key data
+    be_u32* pHermite_data;          // 0x04  per parts key data
     u16 Key_hist[2][2][3];    // 0x08  root key history [flip][rot/pos][axis]
     f32 Mot_frame_max;         // 0x20
     f32 Mot_frame;            // 0x24
@@ -238,7 +238,7 @@ struct MotionWorkSub {
     u8 Joint_num;            // 0x30
     u8 pad_31[3];
     u8* pJoint_no;          // 0x34  model parts index per motion parts
-    u16* pJoint_kind;       // 0x38  low byte: kind (1 root pos, 0x40 root rot, 2/4/8/0x30 rot/pos/scale), bits 8-11: attach camera channel, bits 12-15: Fcc type
+    be_u16* pJoint_kind;       // 0x38  low byte: kind (1 root pos, 0x40 root rot, 2/4/8/0x30 rot/pos/scale), bits 8-11: attach camera channel, bits 12-15: Fcc type
     u16 Null_pos;       // 0x3C  motion parts index of the root position (0xFFFF = none)
     u16 Null_rot;       // 0x3E  motion parts index of the root rotation
     u16 Mot_attr;            // 0x40  bit0: move the model by the root speed, bit1: reverse, bit2: loop, bit3: pause, bit6: flip, bit8, bit10: hokan speed blend, bit12: sequence reverse, bit13: blend parts, bit15: frame from seqFrame

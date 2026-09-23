@@ -63,7 +63,7 @@ struct TitleWork {
 
 // Offset table at the head of title.dat / omk_tX.dat: byte offsets of the sub-files.
 struct TitleArc {
-    u32 ofs[0x10];
+    be_u32 ofs[0x10];
 };
 #define TITLE_ARC_PTR(arc, no) ((void*) ((arc)->ofs[no] + (u32) (arc)))
 

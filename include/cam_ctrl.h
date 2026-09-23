@@ -24,14 +24,14 @@ struct CameraAreaInfo {  // hit area
     s8 area_no;   // 0x01
     s8 camera_no; // 0x02
     u8 attr;      // 0x03  bit 4 = ?, bit 8 = ?, 0x20 set from 8 by calcAddr, 0x40 = check dir, 0x80 = no light update
-    f32 dir;      // 0x04  facing angle the player must have (attr & 0x40)
+    be_f32 dir;      // 0x04  facing angle the player must have (attr & 0x40)
     u8 attr2;     // 0x08  matched against battle/state attribute
     u8 attr3;     // 0x09  third attribute byte (t_camera TcAdat::attr3; 0xFF = none)
     u8 pad_A[0x20 - 0x0A];
-    f32 height;   // 0x20
-    f32 base_y;   // 0x24
-    s32 num;      // 0x28  polygon vertex count
-    Vec* points;  // 0x2C
+    be_f32 height;   // 0x20
+    be_f32 base_y;   // 0x24
+    be_s32 num;      // 0x28  polygon vertex count
+    BeVec* points;  // 0x2C
 };
 
 struct CameraAreaRec {  // area -> cut link
@@ -46,15 +46,15 @@ struct CameraCut {
     s8 camera_no;   // 0x01
     s8 type;        // 0x02  CameraControl state selector
     u8 flags;       // 0x03  bit 0: aim_ofs valid
-    Vec aim_ofs;    // 0x04  added to the player position to get the aim point
-    u16* frames;    // 0x10  key frame times
-    f32 floor_ratio; // 0x14  shoulder camera floor ratio (cam_qfps setAreaData)
+    BeVec aim_ofs;    // 0x04  added to the player position to get the aim point
+    be_u16* frames;    // 0x10  key frame times
+    be_f32 floor_ratio; // 0x14  shoulder camera floor ratio (cam_qfps setAreaData)
     u8 pad_18[0x20 - 0x18];
-    s32 num;        // 0x20  key count
-    Vec* pos;       // 0x24
-    Vec* at;        // 0x28
-    f32* roll;      // 0x2C
-    f32* fovy;      // 0x30
+    be_s32 num;        // 0x20  key count
+    BeVec* pos;       // 0x24
+    BeVec* at;        // 0x28
+    be_f32* roll;      // 0x2C
+    be_f32* fovy;      // 0x30
 };
 
 struct CameraLerp {
@@ -64,7 +64,7 @@ struct CameraLerp {
     s8 area_to;    // 0x03
     s8 cam_to;     // 0x04
     u8 pad_5[3];
-    s32 frame;     // 0x08
+    be_s32 frame;     // 0x08
     u8 pad_C[4];
 };
 

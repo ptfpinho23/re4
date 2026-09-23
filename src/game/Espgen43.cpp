@@ -578,7 +578,7 @@ int Espgen43_SetFreeWork(EspgenWork* pGen, EspGenWork* pSeq, EspSeqData* pSeqHed
     p->Amb.a = pSeq->Col_d_a * 255.0f;
     p->TexNo = pSeq->Tex_id;
     p->texRep = 1 << (s8) pSeq->Work8[0];
-    PSVECScale(&pSeq->Ang, &r, 6.28f / 360.0f);
+    PSVECScale(BEVEC_PTR(pSeq->Ang), &r, 6.28f / 360.0f);
     if (SetSandWork(pGen, (Vec*) &pSeq->Pos.x, &r, pSeq->Size_base_x, pSeq->Size_plus + 1.0f, nx, ny) == NULL) {
         return 0;
     }

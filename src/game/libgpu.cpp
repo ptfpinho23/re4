@@ -36,11 +36,11 @@ void DelPrim(u32* pOt, u32* pWk)
     }
     do {
         u32* p = (u32*) *pOt;
-        if ((s32) *pOt < 0 && p == pWk) {
+        if (OT_IS_WORK(*pOt) && p == pWk) {
             *pOt = *p;
             return;
         }
-        pOt = (u32*) (*pOt | 0x80000000);
+        pOt = (u32*) (OT_PTR(*pOt));
     } while (*pOt != 0xFFFFFFFF);
 }
 
@@ -51,7 +51,7 @@ void ClearOTagR(u32* pOt, int n)
 
     *pOt = 0xFFFFFFFF;
     for (i = 0; i < n - 1; i++) {
-        pOt[1] = (u32) pOt & 0x7FFFFFFF;
+        pOt[1] = OT_SLOT(pOt);
         pOt++;
     }
 }
@@ -88,10 +88,10 @@ void DrawOTag(u32* pOt)
     }
     do {
         u32* p = (u32*) *pOt;
-        if ((s32) p < 0) {
+        if (OT_IS_WORK(p)) {
             tbl[p[1] & 0x1F]((u32) p);
         }
-        pOt = (u32*) (*pOt | 0x80000000);
+        pOt = (u32*) (OT_PTR(*pOt));
     } while (*pOt != 0xFFFFFFFF);
 }
 

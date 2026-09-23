@@ -13,7 +13,7 @@ struct MessageData {
     u32 lang;      // 0x00
     u8* ptr[5];    // 0x04  message tables (type 0..4), each: u32 x0, u32 ofs[lang]
 
-    u16* getAddr(int no, int data_type);
+    be_u16* getAddr(int no, int data_type);
     int getMesNum(int data_type);
     int getSpaceWidth();
     void setPtr(int type, u8* p) { ptr[type] = p; }
@@ -110,8 +110,8 @@ public:
     u16 m_jump_mes[3];     // 0x90
     s8 m_jump_idx;         // 0x96
     s8 m_jump_max;         // 0x97
-    u16* m_pMes;          // 0x98
-    u16* m_pRetAddr;       // 0x9C
+    be_u16* m_pMes;          // 0x98
+    be_u16* m_pRetAddr;       // 0x9C
     MessageFont* m_pRetFont;  // 0xA0
     u32 m_number;         // 0xA4
     u16 digit;          // 0xA8

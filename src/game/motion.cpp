@@ -151,7 +151,7 @@ void MotionSetCore(cModel* m, void* w_, void* data_, void* seq_, int hokan, int 
 {
     MotionWork* w = (MotionWork*) w_;
     MotionData* data = (MotionData*) data_;
-    u16* seq = (u16*) seq_;
+    be_u16* seq = (be_u16*) seq_;
     HermitePrm prm;
     HermitePrm* pp = &prm;
     u16 hist0[3] = { 0, 0, 0 };
@@ -159,7 +159,7 @@ void MotionSetCore(cModel* m, void* w_, void* data_, void* seq_, int hokan, int 
     Vec v0;
     Vec v1;
     Vec v2;
-    u32* tbl;
+    be_u32* tbl;
     cModel* p;
     AttachCamera* cam;
     int f;
@@ -224,17 +224,17 @@ void MotionSetCore(cModel* m, void* w_, void* data_, void* seq_, int hokan, int 
     }
     w->Mot_frame_max = (f32) w->pMot->maxFrame;
     w->Joint_num = w->pMot->nParts;
-    w->pJoint_kind = (u16*) ((u8*) w->pMot + 3);
+    w->pJoint_kind = (be_u16*) ((u8*) w->pMot + 3);
     w->pJoint_no = (u8*) w->pMot + (w->Joint_num * 2 + 3);
     if (!(w->Mot_flag & 0x10000000)) {
         IKInit(m, w);
     }
     // Two statements: the end pointer lives in `tbl` (r10) before the align (one expression ties the
     // partsNo reload to the sum and allocates it).
-    tbl = (u32*) ((u32) w->pJoint_no + w->Joint_num);
-    tbl = (u32*) (((u32) tbl + 3) & ~3);
+    tbl = (be_u32*) ((u32) w->pJoint_no + w->Joint_num);
+    tbl = (be_u32*) (((u32) tbl + 3) & ~3);
     tbl++;
-    if ((s32) tbl[0] >= 0) {
+    if (NOT_RELOCATED(tbl[0])) {
         for (i = 0; i < w->Joint_num; i++) {
             tbl[i] += (u32) w->pMot;
         }
@@ -366,20 +366,20 @@ void MotionSetCore(cModel* m, void* w_, void* data_, void* seq_, int hokan, int 
     pp->frame = w->Mot_frame;
     if (w->Null_pos != 0xFFFF) {
         pp->type = w->pJoint_kind[w->Null_pos] >> 12;
-        pp->key = (u8*) w->pHermite_data[w->Null_pos];
+        pp->key = (u8*) (u32) w->pHermite_data[w->Null_pos];
         HermiteInterpolation(pp, &w->Pos, hist0);
         w->Pos_old = w->Pos;
     }
     if (w->Null_rot != 0xFFFF) {
         pp->type = w->pJoint_kind[w->Null_rot] >> 12;
-        pp->key = (u8*) w->pHermite_data[w->Null_rot];
+        pp->key = (u8*) (u32) w->pHermite_data[w->Null_rot];
         HermiteInterpolation(pp, &w->Ang, hist1);
         w->Ang_old = w->Ang;
     }
     if (w->Null_pos != 0xFFFF) {
         pp->frame = 0.0f;
         pp->type = w->pJoint_kind[w->Null_pos] >> 12;
-        pp->key = (u8*) w->pHermite_data[w->Null_pos];
+        pp->key = (u8*) (u32) w->pHermite_data[w->Null_pos];
         HermiteInterpolation(pp, &v0, hist0);
         pp->frame = w->Mot_frame_max;
         pp->flags |= 2;
@@ -389,7 +389,7 @@ void MotionSetCore(cModel* m, void* w_, void* data_, void* seq_, int hokan, int 
     if (w->Null_rot != 0xFFFF) {
         pp->frame = 0.0f;
         pp->type = w->pJoint_kind[w->Null_rot] >> 12;
-        pp->key = (u8*) w->pHermite_data[w->Null_rot];
+        pp->key = (u8*) (u32) w->pHermite_data[w->Null_rot];
         HermiteInterpolation(pp, &v0, hist1);
         pp->frame = w->Mot_frame_max;
         pp->flags |= 2;
@@ -403,7 +403,7 @@ void MotionSetCore(cModel* m, void* w_, void* data_, void* seq_, int hokan, int 
             if (cam->parts[4] != 0xFF) {
                 pp->frame = 0.0f;
                 pp->type = w->pJoint_kind[cam->parts[4]] >> 12;
-                pp->key = (u8*) w->pHermite_data[cam->parts[4]];
+                pp->key = (u8*) (u32) w->pHermite_data[cam->parts[4]];
                 HermiteInterpolation(pp, &v2, hist0);
             }
             cam->frame = 0;
@@ -717,7 +717,7 @@ void MotionMoveCore(cModel* pEm, MotionWorkSub* w, Camera* pCamera)
                 continue;
             }
             pp->type = info >> 12;
-            pp->key = (u8*) w->pHermite_data[i];
+            pp->key = (u8*) (u32) w->pHermite_data[i];
             if (i == cam->parts[0]) {
                 HermiteInterpolation(pp, &cam->camera_data[0], cam->history[0]);
                 if (w->Mot_attr & 0x40) {
@@ -768,7 +768,7 @@ void MotionMoveCore(cModel* pEm, MotionWorkSub* w, Camera* pCamera)
             MOTION_PARTS(p)->flags |= 0x80000000;
         }
         pp->type = w->pJoint_kind[i] >> 12;
-        pp->key = (u8*) w->pHermite_data[i];
+        pp->key = (u8*) (u32) w->pHermite_data[i];
         if (MOTION_PARTS(p)->flags & 0x04000000) {
             pp->flags |= 8;
         } else {
@@ -999,14 +999,14 @@ void MotionGetSpeed(cModel* pEm, MotionWorkSub* w, int flg, Vec* Pos_move, Vec* 
     if (w->Null_pos != 0xFFFF) {
         pp->frame = w->Mot_frame;
         pp->maxFrame = w->Mot_frame_max;
-        pp->key = (u8*) w->pHermite_data[w->Null_pos];
+        pp->key = (u8*) (u32) w->pHermite_data[w->Null_pos];
         pp->type = w->pJoint_kind[w->Null_pos] >> 12;
         HermiteInterpolation(pp, &a, MOT_HIST(w, flip, 1));
     }
     if (w->Null_rot != 0xFFFF) {
         pp->frame = w->Mot_frame;
         pp->maxFrame = w->Mot_frame_max;
-        pp->key = (u8*) w->pHermite_data[w->Null_rot];
+        pp->key = (u8*) (u32) w->pHermite_data[w->Null_rot];
         pp->type = w->pJoint_kind[w->Null_rot] >> 12;
         HermiteInterpolation(pp, &b, MOT_HIST(w, flip, 0));
     }
@@ -1094,14 +1094,14 @@ void MotionGetPosition(cModel* pEm, Vec* pPos, Vec* pAng)
     if (w->Null_pos != 0xFFFF) {
         pp->frame = w->Mot_frame;
         pp->maxFrame = w->Mot_frame_max;
-        pp->key = (u8*) w->pHermite_data[w->Null_pos];
+        pp->key = (u8*) (u32) w->pHermite_data[w->Null_pos];
         pp->type = w->pJoint_kind[w->Null_pos] >> 12;
         HermiteInterpolation(pp, pPos, MOT_HIST(w, flip, 1));
     }
     if (w->Null_rot != 0xFFFF) {
         pp->frame = w->Mot_frame;
         pp->maxFrame = w->Mot_frame_max;
-        pp->key = (u8*) w->pHermite_data[w->Null_rot];
+        pp->key = (u8*) (u32) w->pHermite_data[w->Null_rot];
         pp->type = w->pJoint_kind[w->Null_rot] >> 12;
         HermiteInterpolation(pp, pAng, MOT_HIST(w, flip, 0));
     }
@@ -1196,7 +1196,7 @@ u16 MotionSequenceCtrl(MotionWorkSub* w)
 // Frame count word of an FCV (camera curve) block.
 u16 FcvGetMaxFrame(u16* pData)
 {
-    return pData[0];
+    return FILE_U16(pData[0]);
 }
 
 // Last frame of the motion (-1 without motion).
@@ -1279,7 +1279,7 @@ int HermiteInterpolation(HermitePrm* prm, Vec* out, u16* hist)
     f32 f1 = r;
     int ret = 0;
     int axis = 0;
-    u16* frames;
+    be_u16* frames;
     u8* data;
     f32 val[2];
     f32 tan[2];
@@ -1290,8 +1290,8 @@ int HermiteInterpolation(HermitePrm* prm, Vec* out, u16* hist)
     int found;
 
     for (; axis <= 2; axis++) {
-        n = *(u16*) p;
-        frames = (u16*) (p + 2);
+        n = FILE_U16(*(u16*) p);
+        frames = (be_u16*) (p + 2);
         data = p + n * 2 + 2;
         hp++;
         p = data + Fcc_next_axis_addr(prm->type, n);
@@ -1332,7 +1332,7 @@ int HermiteInterpolation(HermitePrm* prm, Vec* out, u16* hist)
         }
         if (cnt != 0) {
             asm("" : "+r"(idx));  // COMPILER-DIFF: the table lis is issued before the fp init
-            u16* fp = (u16*) (idx * 2 + (u32) frames);
+            be_u16* fp = (be_u16*) (idx * 2 + (u32) frames);
 
             do {
                 f0 = (f32) *fp;
@@ -1364,7 +1364,7 @@ int HermiteInterpolation(HermitePrm* prm, Vec* out, u16* hist)
                     fp--;
                     idx--;
                     if (idx < 0) {
-                        fp = (u16*) (last * 2 + (u32) frames);
+                        fp = (be_u16*) (last * 2 + (u32) frames);
                         idx = last;
                     }
                 } else {
@@ -1404,6 +1404,7 @@ typedef union {
     } b;
 } FccS16;
 
+#ifndef RE4_PORT
 #define FCC_F32(dst, i)      \
     cf.b.b0 = d[(i)];        \
     cf.b.b1 = d[(i) + 1];    \
@@ -1414,6 +1415,19 @@ typedef union {
     cs.b.hi = d[(i)];        \
     cs.b.lo = d[(i) + 1];    \
     (dst) = (f32) cs.s * 0.0001f;
+#else
+// The key bytes are big-endian; the union's fields are the host's byte order.
+#define FCC_F32(dst, i)      \
+    cf.b.b3 = d[(i)];        \
+    cf.b.b2 = d[(i) + 1];    \
+    cf.b.b1 = d[(i) + 2];    \
+    cf.b.b0 = d[(i) + 3];    \
+    (dst) = cf.f;
+#define FCC_S16(dst, i)      \
+    cs.b.lo = d[(i)];        \
+    cs.b.hi = d[(i) + 1];    \
+    (dst) = (f32) cs.s * 0.0001f;
+#endif
 #define FCC_S8(dst, i) (dst) = (f32) (s8) d[(i)] * 0.0001f;
 
 // Key layout 0: f32 value, f32 in-tangent, f32 out-tangent (12 bytes/key); reads keys i0, i1.

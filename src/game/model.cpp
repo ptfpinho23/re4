@@ -941,16 +941,16 @@ void calcModelAddr(cModelData* d)
 {
     u8* base = (u8*) d;
 
-    if ((int) d->pClr < 0) {
+    if (IS_RELOCATED_I(d->pClr)) {
         return;
     }
-    d->pClr = base + (u32) d->pClr;
-    d->pTex = base + (u32) d->pTex;
-    d->pHead = (ModelDataHead*) (base + (u32) d->pHead);
-    d->pWeight = base + (u32) d->pWeight;
-    d->pParts = (ModelPart*) (base + (u32) d->pParts);
-    d->vtxOrig = base + (u32) d->vtxOrig;
-    d->nrmOrig = base + (u32) d->nrmOrig;
+    d->pClr = base + FILE_U32(d->pClr);
+    d->pTex = base + FILE_U32(d->pTex);
+    d->pHead = (ModelDataHead*) (base + FILE_U32(d->pHead));
+    d->pWeight = base + FILE_U32(d->pWeight);
+    d->pParts = (ModelPart*) (base + FILE_U32(d->pParts));
+    d->vtxOrig = base + FILE_U32(d->vtxOrig);
+    d->nrmOrig = base + FILE_U32(d->nrmOrig);
     if (d->version > 0x20030817) {
         if (d->blendTbl != 0) {
             d->blendTbl = (u32) base + d->blendTbl;
@@ -970,16 +970,16 @@ void calcModelOffset(cModelData* d)
 {
     u8* base = (u8*) d;
 
-    if ((int) d->pClr >= 0) {
+    if (NOT_RELOCATED_I(d->pClr)) {
         return;
     }
-    d->pClr = (void*) ((u8*) d->pClr - base);
-    d->pTex = (void*) ((u8*) d->pTex - base);
-    d->pHead = (ModelDataHead*) ((u8*) d->pHead - base);
-    d->pWeight = (void*) ((u8*) d->pWeight - base);
-    d->pParts = (ModelPart*) ((u8*) d->pParts - base);
-    d->vtxOrig = (void*) ((u8*) d->vtxOrig - base);
-    d->nrmOrig = (void*) ((u8*) d->nrmOrig - base);
+    d->pClr = (void*) FILE_U32((u8*) d->pClr - base);
+    d->pTex = (void*) FILE_U32((u8*) d->pTex - base);
+    d->pHead = (ModelDataHead*) FILE_U32((u8*) d->pHead - base);
+    d->pWeight = (void*) FILE_U32((u8*) d->pWeight - base);
+    d->pParts = (ModelPart*) FILE_U32((u8*) d->pParts - base);
+    d->vtxOrig = (void*) FILE_U32((u8*) d->vtxOrig - base);
+    d->nrmOrig = (void*) FILE_U32((u8*) d->nrmOrig - base);
     if (d->version > 0x20030817) {
         if (d->blendTbl != 0) {
             d->blendTbl -= (u32) base;
@@ -995,7 +995,7 @@ void slideModelAddr(u32 addr, int ofs)
 {
     cModelData* d = (cModelData*) addr;
 
-    if ((int) d->pClr >= 0) {
+    if (NOT_RELOCATED_I(d->pClr)) {
         calcModelAddr(d);
     }
     d->pClr = (u8*) d->pClr + ofs;
@@ -1023,15 +1023,15 @@ void calcTplAddr(TEXPalette* tpl)
     if (tpl == NULL) {
         return;
     }
-    if ((int) tpl->descriptorArray < 0) {
+    if (IS_RELOCATED_I(tpl->descriptorArray)) {
         return;
     }
-    tpl->descriptorArray = (TEXDescriptor*) ((u32) tpl->descriptorArray + (u32) tpl);
+    tpl->descriptorArray = (TEXDescriptor*) (FILE_U32(tpl->descriptorArray) + (u32) tpl);
     for (i = 0; i < tpl->numDescriptors; i++) {
         if (tpl->descriptorArray[i].textureHeader != NULL) {
-            tpl->descriptorArray[i].textureHeader = (TEXHeader*) ((u32) tpl->descriptorArray[i].textureHeader + (u32) tpl);
+            tpl->descriptorArray[i].textureHeader = (TEXHeader*) (FILE_U32(tpl->descriptorArray[i].textureHeader) + (u32) tpl);
             if (tpl->descriptorArray[i].textureHeader->unpacked == 0) {
-                tpl->descriptorArray[i].textureHeader->data = (void*) ((u32) tpl->descriptorArray[i].textureHeader->data + (u32) tpl);
+                tpl->descriptorArray[i].textureHeader->data = (void*) (FILE_U32(tpl->descriptorArray[i].textureHeader->data) + (u32) tpl);
                 tpl->descriptorArray[i].textureHeader->unpacked = 1;
             }
         }
@@ -1043,19 +1043,19 @@ void calcTplOffset(TEXPalette* tpl)
 {
     u32 i;
 
-    if ((int) tpl->descriptorArray >= 0) {
+    if (NOT_RELOCATED_I(tpl->descriptorArray)) {
         return;
     }
     for (i = 0; i < tpl->numDescriptors; i++) {
         if (tpl->descriptorArray[i].textureHeader != NULL) {
             if (tpl->descriptorArray[i].textureHeader->unpacked != 0) {
-                tpl->descriptorArray[i].textureHeader->data = (void*) ((u8*) tpl->descriptorArray[i].textureHeader->data - (u8*) tpl);
+                tpl->descriptorArray[i].textureHeader->data = (void*) (FILE_OFS(tpl->descriptorArray[i].textureHeader->data, tpl));
                 tpl->descriptorArray[i].textureHeader->unpacked = 0;
             }
-            tpl->descriptorArray[i].textureHeader = (TEXHeader*) ((u8*) tpl->descriptorArray[i].textureHeader - (u8*) tpl);
+            tpl->descriptorArray[i].textureHeader = (TEXHeader*) (FILE_OFS(tpl->descriptorArray[i].textureHeader, tpl));
         }
     }
-    tpl->descriptorArray = (TEXDescriptor*) ((u8*) tpl->descriptorArray - (u8*) tpl);
+    tpl->descriptorArray = (TEXDescriptor*) (FILE_OFS(tpl->descriptorArray, tpl));
 }
 
 // Shifts a relocated TPL's pointers by ofs.
@@ -1064,7 +1064,7 @@ void slideTplAddr(void* p, int ofs)
     TEXPalette* tpl = (TEXPalette*) p;
     u32 i;
 
-    if ((int) tpl->descriptorArray >= 0) {
+    if (NOT_RELOCATED_I(tpl->descriptorArray)) {
         calcTplAddr(tpl);
     }
     tpl->descriptorArray = (TEXDescriptor*) ((u8*) tpl->descriptorArray + ofs);
@@ -1127,7 +1127,7 @@ void cModel::setJointInfo(void* pHead)
 
     if (d->version == 0x20030818) {
         if (d->blendTbl != 0) {
-            Motion.blendTbl = (u16*) d->blendTbl;
+            Motion.blendTbl = (u16*) (u32) d->blendTbl;
         } else {
             Motion.blendTbl = 0;
         }

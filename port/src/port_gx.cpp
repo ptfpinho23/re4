@@ -16,7 +16,12 @@
 #include "port_gu.h"
 #include "gx.h"
 #include <string.h>
+#ifdef __PSP__
 #include <malloc.h>
+#define ALIGNED_ALLOC(n) memalign(16, n)
+#else
+#define ALIGNED_ALLOC(n) aligned_alloc(16, ((n) + 15) & ~(size_t) 15)  // the host test build
+#endif
 #include <stdlib.h>
 #include <math.h>
 
@@ -190,7 +195,7 @@ static void* convertTexture(const TexObjPort* t, const TlutPort* tlut, u8* psmOu
     if (fmt == 14) {  // CMPR: 8x8 tiles of four 4x4 DXT1 blocks -> GE DXT1 (indices then colours)
         *psmOut = PG_PSM_DXT1;
         int bw = (w + 3) / 4, bh = (h + 3) / 4;
-        u8* out = (u8*) memalign(16, bw * bh * 8);
+        u8* out = (u8*) ALIGNED_ALLOC(bw * bh * 8);
         if (!out) return NULL;
         for (int ty = 0; ty < (h + 7) / 8; ty++) {
             for (int tx = 0; tx < (w + 7) / 8; tx++) {
@@ -211,7 +216,7 @@ static void* convertTexture(const TexObjPort* t, const TlutPort* tlut, u8* psmOu
         return out;
     }
     *psmOut = PG_PSM_8888;
-    u32* out = (u32*) memalign(16, w * h * 4);
+    u32* out = (u32*) ALIGNED_ALLOC(w * h * 4);
     if (!out) return NULL;
     int tw = 4, th = 4;  // tile size
     switch (fmt) {

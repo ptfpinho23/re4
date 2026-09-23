@@ -61,8 +61,8 @@ struct OSFontHeader {
 
 // Font file: offsets to the TPL and to the width table.
 struct MesFontFile {
-    u32 tplOfs;    // 0x00
-    u32 widthOfs;  // 0x04
+    be_u32 tplOfs;    // 0x00
+    be_u32 widthOfs;  // 0x04
 };
 
 u32 mes_col_tbl[10] = {
@@ -241,29 +241,29 @@ void MessageFont::destroy()
 
 // Message table: u32 header, then per language an offset to a block of message offsets.
 struct MesTblBlock {
-    u32 x0;
-    u32 count;    // 0x04
-    u32 ofs[1];   // 0x08
+    be_u32 x0;
+    be_u32 count;    // 0x04
+    be_u32 ofs[1];   // 0x08
 };
 
 // Text of message `no` in message file `type` (0 core, 1 room/event mdt, 2 core, 3 item names,
 // 4 ...) for the current language; NULL when out of range.
-u16* MessageData::getAddr(int no, int data_type)
+be_u16* MessageData::getAddr(int no, int data_type)
 {
     u32* tbl = (u32*) ptr[data_type];
-    MesTblBlock* blk = (MesTblBlock*) ((u8*) tbl + tbl[lang + 1]);
+    MesTblBlock* blk = (MesTblBlock*) ((u8*) tbl + FILE_U32(tbl[lang + 1]));
 
     if (no > (int) blk->count - 1) {
         return NULL;
     }
-    return (u16*) ((u8*) blk + blk->ofs[no]);
+    return (be_u16*) ((u8*) blk + blk->ofs[no]);
 }
 
 // Number of messages in file `type` for the current language.
 int MessageData::getMesNum(int data_type)
 {
     u32* tbl = (u32*) ptr[data_type];
-    MesTblBlock* blk = (MesTblBlock*) ((u8*) tbl + tbl[lang + 1]);
+    MesTblBlock* blk = (MesTblBlock*) ((u8*) tbl + FILE_U32(tbl[lang + 1]));
 
     return blk->count;
 }
@@ -794,7 +794,7 @@ void Message::WidthCk()
     int n = 0;
     int i;
     s8 l, r;
-    u16* save;
+    be_u16* save;
     u16 code;
 
     qp = qbase;

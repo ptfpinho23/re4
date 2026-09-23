@@ -740,7 +740,7 @@ int emBarrelSetRollSpd(cEmBarrel* pEm)
         }
         w->pRoute = e;
     }
-    PSVECSubtract(&e->pos, &pEm->pos, &dir);
+    PSVECSubtract(BEVEC_PTR(e->pos), &pEm->pos, &dir);
     dir.y = 0.0f;
 #line 1017 "D:/Bio4/Prog/embarrel.cpp"
     VECNormalize(&dir, &dir);

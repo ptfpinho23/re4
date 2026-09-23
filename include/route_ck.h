@@ -10,25 +10,25 @@ class cEm;
 
 // One way point (16 bytes).
 struct RtpPoint {
-    Vec pos;       // 0x00
-    u16 offLine;   // 0x0C  first entry in the link table
-    u16 nLine;     // 0x0E  linked points
+    BeVec pos;     // 0x00
+    be_u16 offLine;  // 0x0C  first entry in the link table
+    be_u16 nLine;    // 0x0E  linked points
 };
 
 // Link table entry (4 bytes).
 struct RtpLink {
-    s16 point;     // 0x00  way point index
-    u16 x2;        // 0x02
+    be_s16 point;  // 0x00  way point index
+    be_u16 x2;     // 0x02
 };
 
 // RTP file header; the tables are at byte offsets from the header.
 struct RtpData {
     u8 pad_0[6];
-    u16 nPoint;    // 0x06
+    be_u16 nPoint; // 0x06
     u8 pad_8[4];
-    u32 pointOfs;  // 0x0C  RtpPoint[nPoint]
-    u32 linkOfs;   // 0x10  RtpLink[]
-    u32 nextOfs;   // 0x14  s8 next[nPoint][nPoint]: next hop from row to column, -1 = unreachable
+    be_u32 pointOfs;  // 0x0C  RtpPoint[nPoint]
+    be_u32 linkOfs;   // 0x10  RtpLink[]
+    be_u32 nextOfs;   // 0x14  s8 next[nPoint][nPoint]: next hop from row to column, -1 = unreachable
 };
 
 extern "C" {

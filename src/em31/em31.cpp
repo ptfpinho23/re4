@@ -4866,7 +4866,7 @@ int em31BridgeJumpCk(cEm31* em)
             continue;
         }
         PSMTXRotRad(m, 'y', e->rotY);
-        TransMatrix(m, &e->pos);
+        TransMatrix(m, BEVEC_PTR(e->pos));
         PSMTXInverse(m, m);
         PSMTXMultVec(m, &pPL->pos, &lp);
         if (lp.z < 6000.0f) {
@@ -4887,7 +4887,7 @@ int em31BridgeJumpCk(cEm31* em)
             if (e->pad_3 != f->pad_3) {
                 continue;
             }
-            if (!(fabsf(Muku(&em->pos, &f->pos, em->ang.y, PI)) > 0.2617994f)) {
+            if (!(fabsf(Muku(&em->pos, BEVEC_PTR(f->pos), em->ang.y, PI)) > 0.2617994f)) {
                 w->Target_pos = f->pos;
                 EmRoutineSet(em, 1, 8, 0, 0);
                 return 1;

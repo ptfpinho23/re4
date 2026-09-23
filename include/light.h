@@ -26,6 +26,34 @@ struct LightSpot {
     f32 K2;            // 0x20
     u8 pad_24[0x40 - 0x24];
 };
+// The same block as the .lit file holds it (big-endian in the port); cLight keeps a LightSpot.
+#ifdef RE4_PORT
+struct BeLightSpot {
+    BeVec Normal;
+    be_u32 A0;         // the A0 / flags word
+    be_f32 A1, A2, K0, K1, K2;
+    u8 pad_24[0x40 - 0x24];
+    operator LightSpot() const
+    {
+        LightSpot s;
+        s.Normal = Normal;
+        s.flags = A0;
+        s.A1 = A1; s.A2 = A2; s.K0 = K0; s.K1 = K1; s.K2 = K2;
+        __builtin_memcpy(s.pad_24, pad_24, sizeof(pad_24));
+        return s;
+    }
+    BeLightSpot& operator=(const LightSpot& s)
+    {
+        Normal = s.Normal;
+        A0 = s.flags;
+        A1 = s.A1; A2 = s.A2; K0 = s.K0; K1 = s.K1; K2 = s.K2;
+        __builtin_memcpy(pad_24, s.pad_24, sizeof(pad_24));
+        return *this;
+    }
+};
+#else
+typedef LightSpot BeLightSpot;
+#endif
 
 // Per-type work block (0x80 bytes, cLight+0x78 / cLightWork+0x6C). The first word is a colour
 // (cLit::versionUp copies it to the base colour for type 1 lights).
@@ -47,19 +75,19 @@ public:
     u8 xD;             // 0x01  -> cLight::xD (spot type: 3 / 6 have a direction)
     u8 Type;           // 0x02  -> cLight::type (per-type move handler, construct id)
     u8 xF;             // 0x03  -> cLight::xF (screen kind mask; 0x10 cloth, 0x40 set by versionUp)
-    Vec Pos;           // 0x04
-    f32 Radius;        // 0x10  -> cLight::Radius
+    BeVec Pos;           // 0x04
+    be_f32 Radius;        // 0x10  -> cLight::Radius
     GXColor Col;     // 0x14
-    f32 Intensity;         // 0x18
+    be_f32 Intensity;         // 0x18
     u8 ParentType;     // 0x1C
     u8 Kind;           // 0x1D
     u8 Attribute;           // 0x1E
     u8 Priority;            // 0x1F
-    u32 ParentNo;      // 0x20  parts no << 16 | parent no
-    u16 HitRadius;           // 0x24  hit adjust radius
-    u16 Dummy82;       // 0x26  (PS2 cLightWork Dummy82)
-    u32 Dummy9;        // 0x28  (PS2 cLightWork Dummy9)
-    LightSpot spot;    // 0x2C
+    be_u32 ParentNo;      // 0x20  parts no << 16 | parent no
+    be_u16 HitRadius;           // 0x24  hit adjust radius
+    be_u16 Dummy82;       // 0x26  (PS2 cLightWork Dummy82)
+    be_u32 Dummy9;        // 0x28  (PS2 cLightWork Dummy9)
+    BeLightSpot spot;    // 0x2C
     LightSub sub;      // 0x6C
     LightPath path;    // 0xEC
 
@@ -161,9 +189,9 @@ struct LightPathHeader {
 
 // Fog block (cLightEnv+0x8, copied to `fogNew` by setEnv).
 struct LightFog {
-    s32 Type;          // 0x00  GX fog type (0 = off)
-    f32 Start;         // 0x04
-    f32 End;           // 0x08
+    be_s32 Type;          // 0x00  GX fog type (0 = off)
+    be_f32 Start;         // 0x04
+    be_f32 End;           // 0x08
     GXColor Color;     // 0x0C
 };
 
@@ -181,10 +209,10 @@ public:
 // manager keeps a copy of the current one at cLightMgr+0x38 (returned by getEnvPtr).
 struct cLightEnv {
     GXColor AmbientScr;     // 0x00  model ambient (trans_lit LightSetModel / cloth / water; versionUp 0x23 copies it to AmbientEm / AmbientEsp)
-    u32 nLight;      // 0x04
+    be_u32 nLight;      // 0x04
     LightFog Fog;    // 0x08  Type: gx_sub: 0 = the background colour has no rgb (alpha only); Color: fog / background colour
     LightFog MirrorFog;   // 0x18  mirror fog (db_light "MIRROR FOG")
-    s32 FocusZ;         // 0x28  focus depth (screen z, 0..65535)
+    be_s32 FocusZ;         // 0x28  focus depth (screen z, 0..65535)
     u8 FocusFlag;          // 0x2C
     u8 FocusLevel;          // 0x2D  focus level (0 = depth of field off)
     u8 FocusMode;          // 0x2E  focus mode (0 near, 1 far)
@@ -193,7 +221,7 @@ struct cLightEnv {
     u8 pad_31[3];
     GXColor Tune[3]; // 0x34
     u8 tev_scale[4];  // 0x40  [0..1] -> gxCsScale; db_light shows [2] as a third on/off (PS2 tev_scale[4])
-    f32 far_play_ratio;     // 0x44  far plane = fog end * (1 - farRate) + 1
+    be_f32 far_play_ratio;     // 0x44  far plane = fog end * (1 - farRate) + 1
     u8 Hokan;        // 0x48  fog interpolation frames
     u8 pad_49[0xEC - 0x49];
     cPenWind wind;   // 0xEC
@@ -204,7 +232,7 @@ struct cLightEnv {
     u8 max_lod;       // 0xF3
     u8 aniso;        // 0xF4
     s8 contrast[3];  // 0xF5  Filter00SetContrast
-    f32 lod_bias;     // 0xF8
+    be_f32 lod_bias;     // 0xF8
     GXColor AmbientEm;  // 0xFC  ambient of models without lightInfo.x50 bits 3/4 (trans_lit)
     GXColor AmbientEsp;  // 0x100  ambient of effects / lightInfo.x50 bit3 models (trans_lit)
 
@@ -215,7 +243,7 @@ struct cLightEnv {
 // Light data file (.lit): cut offset table, then the cuts.
 class cLit {
 public:
-    u16 CutNum;          // 0x00
+    be_u16 CutNum;          // 0x00
     u8 Version;        // 0x02
     u8 nMaxLight;      // 0x03
     // 0x04: u32[nCut] byte offset of each cut from the file start (0 = none)

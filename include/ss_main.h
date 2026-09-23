@@ -311,11 +311,11 @@ public:
 
 // One entry of the op message sequence table (0x10 bytes).
 struct TermSeq {
-    u16 x0;
-    s16 x2;    // 0x02  copied to SsTermMain::TermSub::x14
-    int time;  // 0x04  frame the entry fires at
-    int mesNo; // 0x08  message number (-1: wait for the message end)
-    int arg;   // 0x0C  message clear time; -1 ends the sequence
+    be_u16 x0;
+    be_s16 x2;    // 0x02  copied to SsTermMain::TermSub::x14
+    be_s32 time;  // 0x04  frame the entry fires at
+    be_s32 mesNo; // 0x08  message number (-1: wait for the message end)
+    be_s32 arg;   // 0x0C  message clear time; -1 ends the sequence
 };
 
 // One op number of ss_term's op table (SsTermMain::OpeMesTblInit, 0x14 bytes, 24 entries in .data).

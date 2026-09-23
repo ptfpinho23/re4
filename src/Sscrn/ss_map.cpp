@@ -1574,13 +1574,13 @@ int mapColor(u16 room)
 // The room sub-file: word 0 = model count + 2, then the sub-file offsets from word 4.
 int mapRoomNum(MapRoomData* p)
 {
-    return *(int*) p->bin - 2;
+    return FILE_U32(*(int*) p->bin) - 2;
 }
 
 // Model `no` (bin) of a room sub-file.
 void* mapBinAddr(MapRoomData* p, int no)
 {
-    return (u8*) p->bin + ((u32*) p->bin)[no + 4];
+    return (u8*) p->bin + FILE_U32(((u32*) p->bin)[no + 4]);
 }
 
 // Floor collision `no` of a room sub-file (the hit tables follow the model offsets).
@@ -1588,7 +1588,7 @@ cSatHeader* mapHitAddr(MapRoomData* p, int no)
 {
     u32* ofs = (u32*) (mapRoomNum(p) * 4 + (u32) p->bin);
 
-    return (cSatHeader*) ((u8*) p->bin + ofs[no + 4]);
+    return (cSatHeader*) ((u8*) p->bin + FILE_U32(ofs[no + 4]));
 }
 
 #define MAP_ROOM(no, ofs)                       \
@@ -2081,8 +2081,8 @@ void doorModelInit(SUB_SCREEN* wk)
     void* tpl;
     void* bin;
 
-    if ((int) wk->pMapObj >= 0) {
-        wk->pMapObj = (SsArc*) ((u8*) wk->pMapObj + (u32) wk->pBuf);
+    if (NOT_RELOCATED_I(wk->pMapObj)) {
+        wk->pMapObj = (SsArc*) (FILE_PTR(wk->pMapObj) + (u32) wk->pBuf);
     }
     m = wk->map;
     base = (s8) wk->map_obj_num;

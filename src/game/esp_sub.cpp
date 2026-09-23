@@ -1331,7 +1331,7 @@ int EspSeqSet(EspGenWork* pSeq, EspInfo* pCore, u32* pRand_seed, cModel* pMod, M
                     parts = pMod->getPartsPtr(e->m_Parts_no);
                     PSMTXIdentity(m2);
                     low_RotMatrix(m2, &pMod->ang);
-                    PSMTXMultVecSR(m2, &pSeq->Pos, &v);
+                    PSMTXMultVecSR(m2, BEVEC_PTR(pSeq->Pos), &v);
                     m2[0][3] = parts->mat[0][3] + v.x;
                     m2[1][3] = parts->mat[1][3] + v.y;
                     m2[2][3] = parts->mat[2][3] + v.z;

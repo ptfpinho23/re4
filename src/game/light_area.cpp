@@ -23,7 +23,7 @@ struct LightAreaData {
 };
 
 struct LightAreaHed {
-    u32 num;                // 0x00
+    be_u32 num;             // 0x00
     u8 pad_4[0x10 - 0x4];
     LightAreaData data[1];  // 0x10
 };
@@ -81,7 +81,7 @@ void LightAreaInit()
 // Binds the room's SAR block.
 int LightAreaDataLoad(LightAreaHed* p)
 {
-    g_pLightAreaHed = p;
+    g_pLightAreaHed = PORT_FIX(port_fix_light_area, p);
     return 1;
 }
 

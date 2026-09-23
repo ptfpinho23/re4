@@ -1940,7 +1940,7 @@ static void em2b_R1_HouseBreak(cEm2b* em)
         if (w->Timer) {
             w->Timer--;
             if (w->pHouse) {
-                em->ang.y += Muku(&em->pos, &w->pHouse->pos, em->ang.y, 0.0981747732f);
+                em->ang.y += Muku(&em->pos, BEVEC_PTR(w->pHouse->pos), em->ang.y, 0.0981747732f);
             }
         }
         if (em->Motion.Seq_old.Free & 1) {
@@ -1981,7 +1981,7 @@ static void em2b_R1_HouseBreak(cEm2b* em)
         if (w->Timer) {
             w->Timer--;
             if (w->pHouse) {
-                em->ang.y += Muku(&em->pos, &w->pHouse->pos, em->ang.y, 0.0981747732f);
+                em->ang.y += Muku(&em->pos, BEVEC_PTR(w->pHouse->pos), em->ang.y, 0.0981747732f);
             }
         }
         if (em->Motion.Seq_old.Free & 1) {
@@ -2066,7 +2066,7 @@ static void em2b_R1_ScrollBreak(cEm2b* em)
         if (w->Timer) {
             w->Timer--;
             if (w->pHouse) {
-                em->ang.y += Muku(&em->pos, &w->pHouse->pos, em->ang.y, 0.0981747732f);
+                em->ang.y += Muku(&em->pos, BEVEC_PTR(w->pHouse->pos), em->ang.y, 0.0981747732f);
             }
         }
         if (em->Motion.Seq_old.Free & 1) {
@@ -4844,7 +4844,7 @@ int em2bSearchRockCk(cEm2b* em)
             144000000.0f) {
             continue;
         }
-        if (fabsf(Muku(&em->pos, &e->pos, em->ang.y, 3.14159274f)) > 0.785398185f) {
+        if (fabsf(Muku(&em->pos, BEVEC_PTR(e->pos), em->ang.y, 3.14159274f)) > 0.785398185f) {
             continue;
         }
         w->pGoto = e;
@@ -4872,7 +4872,7 @@ int em2bGetRockCk(cEm2b* em)
         20250000.0f) {
         return 0;
     }
-    if (fabsf(Muku(&em->pos, &e->pos, em->ang.y, 3.14159274f)) > 0.785398185f) {
+    if (fabsf(Muku(&em->pos, BEVEC_PTR(e->pos), em->ang.y, 3.14159274f)) > 0.785398185f) {
         return 0;
     }
     w->Atk_wait = Rnd() % 1800 + 1800;
@@ -4984,7 +4984,7 @@ int em2bTreeAtkScrCk(cEm2b* em)
         if (d < (h->pos.x - a.x) * (h->pos.x - a.x) + (h->pos.z - a.z) * (h->pos.z - a.z)) {
             continue;
         }
-        if (fabsf(Muku(&a, &h->pos, ang, 3.14159274f)) > 0.392699093f) {
+        if (fabsf(Muku(&a, BEVEC_PTR(h->pos), ang, 3.14159274f)) > 0.392699093f) {
             continue;
         }
         if (pG->stage_no == 1 && pG->room_no == 0x19) {
@@ -5110,7 +5110,7 @@ void em2bR11eScrBrkCk(cEm2b* em)
         if ((h->pos.x - em->pos.x) * (h->pos.x - em->pos.x) + (h->pos.z - em->pos.z) * (h->pos.z - em->pos.z) > 30250000.0f) {
             continue;
         }
-        if (fabsf(Muku2(GetXZAngle(&em->pos, &h->pos), GetXZAngle(&em->pos, &w->Go_pos), 3.14159274f)) > 0.785398185f) {
+        if (fabsf(Muku2(GetXZAngle(&em->pos, BEVEC_PTR(h->pos)), GetXZAngle(&em->pos, &w->Go_pos), 3.14159274f)) > 0.785398185f) {
             continue;
         }
         if (w->L_go < 64000000.0f) {

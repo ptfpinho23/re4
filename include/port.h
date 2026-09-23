@@ -25,6 +25,15 @@
 #define GC_PTR_OUT(p) (u32) p - 0x80000000 > 0x02FFFFFF
 #define GC_PTR_LOW(p) (u32) p < 0x80000000
 #define GC_LOWMEM 0x80000000  // the OS low-memory block (bus clock at +0xF8)
+// The PS1-style ordering tables (libgpu.cpp ClearOTagR / AddPrim): a link is a work pointer (bit 31
+// set, MEM1) or the address of a table slot with bit 31 cleared.
+#define OT_SLOT(p) (u32) p & 0x7FFFFFFF
+#define OT_PTR(v) v | 0x80000000
+#define OT_IS_WORK(v) (s32) v < 0
+#define OT_IS_SLOT(v) (s32) v >= 0
+// A load-time fix-up of file data the port converts in place (areas: runtime and file structs share
+// the layout): the matching build binds the pointer as it is.
+#define PORT_FIX(fn, p) p
 #else
 #define REG_PIN(r)
 #define ASM_ANCHOR(s)
@@ -61,6 +70,19 @@ extern unsigned char port_devmem[];
 #define GC_PTR_LOW(p) !GC_PTR_OK(p)
 extern unsigned char port_lowmem[0x100];  // port_gcmem.cpp: the bus clock word at +0xF8
 #define GC_LOWMEM ((unsigned long) port_lowmem)
+// Ordering tables: PSP addresses are positive, so the slot links carry bit 31 instead.
+#define OT_SLOT(p) ((u32) (p) | 0x80000000u)
+#define OT_PTR(v) ((u32) (v) & 0x7FFFFFFFu)
+#define OT_IS_WORK(v) !((u32) (v) & 0x80000000u)
+#define OT_IS_SLOT(v) (((u32) (v) & 0x80000000u) != 0)
+#define PORT_FIX(fn, p) fn(p)
+#ifdef __cplusplus
+struct LightAreaHed;
+struct BlockHeader;
+extern "C" LightAreaHed* port_fix_light_area(LightAreaHed* p);  // port/src/port_fix.cpp
+extern "C" BlockHeader* port_fix_block(BlockHeader* h);
+extern "C" void* port_fix_sce_at(void* p);  // an AEV / ITA file
+#endif
 #endif
 
 #endif

@@ -9,27 +9,27 @@ cItmSys* g_pItemModelSys;
 // Item model pack: offsets from the pack start to the id table, the model table and the
 // texture table.
 struct ItemModelPack {
-    u32 x0;      // 0x00
-    u32 ofsId;   // 0x04
-    u32 ofsBin;  // 0x08
-    u32 ofsTpl;  // 0x0C
+    be_u32 x0;      // 0x00
+    be_u32 ofsId;   // 0x04
+    be_u32 ofsBin;  // 0x08
+    be_u32 ofsTpl;  // 0x0C
 };
 
 struct ItemModelId {
-    u16 id;      // 0x00
-    u16 pad_2;
-    u32 pad_4;
+    be_u16 id;   // 0x00
+    be_u16 pad_2;
+    be_u32 pad_4;
 };
 
 struct ItemModelIdTbl {
-    u32 num;            // 0x00
+    be_u32 num;         // 0x00
     ItemModelId id[1];  // 0x04
 };
 
 // model / texture tables: offsets from the table start
 struct ItemModelOfsTbl {
-    u32 num;     // 0x00
-    u32 ofs[1];  // 0x04
+    be_u32 num;  // 0x00
+    be_u32 ofs[1];  // 0x04
 };
 
 // Boot: same as the room init.

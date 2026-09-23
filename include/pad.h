@@ -27,21 +27,21 @@ struct PADStatus {
 
 // Vibration pattern table (VibSetData): offsets from the table start to VibData blocks.
 struct VibDataEntry {
-    u16 type;  // 0x00
-    u16 wait;  // 0x02
-    u16 time;  // 0x04
+    be_u16 type;  // 0x00
+    be_u16 wait;  // 0x02
+    be_u16 time;  // 0x04
     u8 lvl0;   // 0x06  start level
     u8 lvl1;   // 0x07  end level
 };
 
 struct VibData {
-    u32 num;
+    be_u32 num;
     VibDataEntry e[1];
 };
 
 struct VibDataTbl {
-    u32 num;
-    u32 ofs[1];
+    be_u32 num;
+    be_u32 ofs[1];
 };
 
 extern "C" {

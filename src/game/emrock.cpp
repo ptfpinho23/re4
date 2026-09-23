@@ -1441,7 +1441,7 @@ int emRockSetRollSpd(cEmRock* pEm)
         }
         w->pRoute = e;
     }
-    PSVECSubtract(&e->pos, &pEm->pos, &dir);
+    PSVECSubtract(BEVEC_PTR(e->pos), &pEm->pos, &dir);
     dir.y = 0.0f;
 #line 2170 "D:/Bio4/Prog/emrock.cpp"
     VECNormalize(&dir, &dir);
@@ -1656,7 +1656,7 @@ void plemRockEscape(cPlayer* pEm)
             u32 o = pEm->m_Work3 * 0x40 + 8;
             EmiEntry* e = (EmiEntry*) ((u8*) pG->pEmi + o);
 
-            RouteCkToPos(pEm, &e->pos, &v, 0, 0);
+            RouteCkToPos(pEm, BEVEC_PTR(e->pos), &v, 0, 0);
             pEm->ang.y += Muku(&pEm->pos, &v, pEm->ang.y, 0.024543693f);
             pEm->ang.y = LIMIT_ANGLE(pEm->ang.y);
         }

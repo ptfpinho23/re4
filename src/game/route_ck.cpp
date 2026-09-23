@@ -20,12 +20,12 @@ struct RckEmiEntry {
     u8 type;       // 0x00  2 = route point
     u8 kind;       // 0x01  line colour: 1 blue, 2 red
     u8 pad_2[2];
-    Vec pos;       // 0x04
+    BeVec pos;     // 0x04
     u8 pad_10[0x40 - 0x10];
 };
 
 struct RckEmiData {
-    int n;                  // 0x00
+    be_s32 n;               // 0x00
     u8 pad_4[4];
     RckEmiEntry entry[1];   // 0x08
 };
@@ -149,7 +149,7 @@ int RouteCkToEm(cEm* pMy, cEm* pTo, Vec* pDest, int mode)
     pts = rtpPoint(rtpData());
     pt = (RtpPoint*)(pMy->RckMy * sizeof(RtpPoint) + (u32)pts);
     d2 = (pMy->pos.x - pt->pos.x) * (pMy->pos.x - pt->pos.x) + (pMy->pos.z - pt->pos.z) * (pMy->pos.z - pt->pos.z);
-    if (d2 < 62500.0f || (next != pMy->RckMy && rckLineHitCheck(&a, &pts[next].pos, mask, mode) == 0)) {
+    if (d2 < 62500.0f || (next != pMy->RckMy && rckLineHitCheck(&a, BEVEC_PTR(pts[next].pos), mask, mode) == 0)) {
         pMy->RckMy = next;
     }
     *pDest = rtpPoint(rtpData())[pMy->RckMy].pos;
@@ -191,7 +191,7 @@ void RouteCkEscEm(cEm* pMy, cEm* pTo, Vec* pDest)
         RtpData* r = rtpData();
         RtpLink* lk = &rtpLink(r)[pt->offLine + i];
         np = &rtpPoint(r)[lk->point];
-        m = fabsf(Muku(&pMy->pos, &np->pos, ang, PI));
+        m = fabsf(Muku(&pMy->pos, BEVEC_PTR(np->pos), ang, PI));
         if (m < best) {
             continue;
         }
@@ -298,7 +298,7 @@ int RouteCkToPos(cEm* pMy, Vec* pPos, Vec* pDest, int mode, f32* pMax)
     pts = rtpPoint(rtpData());
     pt = (RtpPoint*)(pMy->RckMy * sizeof(RtpPoint) + (u32)pts);
     d2 = (pMy->pos.x - pt->pos.x) * (pMy->pos.x - pt->pos.x) + (pMy->pos.z - pt->pos.z) * (pMy->pos.z - pt->pos.z);
-    if (d2 < 62500.0f || (next != pMy->RckMy && rckLineHitCheck(&a, &pts[next].pos, mask, mode) == 0)) {
+    if (d2 < 62500.0f || (next != pMy->RckMy && rckLineHitCheck(&a, BEVEC_PTR(pts[next].pos), mask, mode) == 0)) {
         pMy->RckMy = next;
     }
     *pDest = rtpPoint(rtpData())[pMy->RckMy].pos;
@@ -389,7 +389,7 @@ int RouteCkPosToPos(Vec* pPos1, Vec* pPos2, Vec* pDest)
             return 0;
         }
     }
-    if (rckLineHitCheck(&a, &pts[next].pos, 0, 0) == 0) {
+    if (rckLineHitCheck(&a, BEVEC_PTR(pts[next].pos), 0, 0) == 0) {
         *pDest = rtpPoint(rtpData())[next].pos;
         return 0;
     }
@@ -509,11 +509,11 @@ f32 RouteCkGetDist(int n0, int n1)
     do {
         next = tbl[rtpData()->nPoint * n0 + n1];
         if (next == -1) {
-            PSVECSubtract(&rtpPoint(rtpData())[n0].pos, &rtpPoint(rtpData())[n1].pos, &tmp);
+            PSVECSubtract(BEVEC_PTR(rtpPoint(rtpData())[n0].pos), BEVEC_PTR(rtpPoint(rtpData())[n1].pos), &tmp);
             return PSVECMag(&tmp);
         }
         np = &rtpPoint(rtpData())[next];
-        PSVECSubtract(&pt->pos, &np->pos, &tmp);
+        PSVECSubtract(BEVEC_PTR(pt->pos), BEVEC_PTR(np->pos), &tmp);
         d += PSVECMag(&tmp);
         n0 = next;
         pt = np;
@@ -632,7 +632,7 @@ s8 getNearPoint(Vec* pPos, int mode, int flag)
     p2 = *pPos;
     p2.y += 500.0f;
     for (i = 0, ip = idx; i < m; i++, ip++) {
-        if (rckLineHitCheck(&p2, &pt[*ip].pos, flag, 0) == 0) {
+        if (rckLineHitCheck(&p2, BEVEC_PTR(pt[*ip].pos), flag, 0) == 0) {
             return *ip;
         }
     }
@@ -714,12 +714,12 @@ void Draw_rtp()
                 }
             }
             if (back) {
-                Draw_line3d(&pt->pos, &np->pos, 0xFFFFFFFF, 0);
+                Draw_line3d(BEVEC_PTR(pt->pos), BEVEC_PTR(np->pos), 0xFFFFFFFF, 0);
             } else {
-                Draw_line3d(&pt->pos, &np->pos, 0xFF0000FF, 0);
-                PSVECSubtract(&pt->pos, &np->pos, &d);
+                Draw_line3d(BEVEC_PTR(pt->pos), BEVEC_PTR(np->pos), 0xFF0000FF, 0);
+                PSVECSubtract(BEVEC_PTR(pt->pos), BEVEC_PTR(np->pos), &d);
                 PSVECScale(&d, &d, 0.5f);
-                PSVECAdd(&np->pos, &d, &f);
+                PSVECAdd(BEVEC_PTR(np->pos), &d, &f);
                 if (d.x == 0.0f && d.z == 0.0f) {
                     continue;
                 }
@@ -810,7 +810,7 @@ void Draw_eminfo()
                     col = 0xFFFF0000;
                     break;
                 }
-                Draw_line3d(&pp->pos, &e->pos, col, 0);
+                Draw_line3d(BEVEC_PTR(pp->pos), BEVEC_PTR(e->pos), col, 0);
             }
         }
     }
@@ -827,6 +827,6 @@ void Draw_eminfo()
             col = 0xFFFF0000;
             break;
         }
-        Draw_line3d(&prev->pos, &first->pos, col, 0);
+        Draw_line3d(BEVEC_PTR(prev->pos), BEVEC_PTR(first->pos), col, 0);
     }
 }

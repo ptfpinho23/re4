@@ -40,14 +40,14 @@ struct BlockConnect {
 
 struct BlockHeader {
     char tag[4];    // 0x00  "BLK"
-    u16 version;    // 0x04  0x100
+    be_u16 version; // 0x04  0x100
     u8 x6;
     u8 nBlock;      // 0x07
-    u16 nArea;      // 0x08
-    u16 nConnect;   // 0x0A
-    u32 ofsLink;    // 0x0C  -> BlockLink[nBlock]
-    u32 ofsArea;    // 0x10  -> BlockArea[nArea]
-    u32 ofsConnect; // 0x14  -> BlockConnect[nConnect]
+    be_u16 nArea;   // 0x08
+    be_u16 nConnect;  // 0x0A
+    be_u32 ofsLink;   // 0x0C  -> BlockLink[nBlock]
+    be_u32 ofsArea;   // 0x10  -> BlockArea[nArea]
+    be_u32 ofsConnect;  // 0x14  -> BlockConnect[nConnect]
 };
 
 // cBlockUnit::state

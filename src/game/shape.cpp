@@ -156,7 +156,7 @@ void ResetShape(cModelInfo* info, void* dst)
 // Shape evaluation work (0xD0 bytes, cleared).
 struct ShapeWork {
     ShapeData* data;   // 0x00
-    s32* table;        // 0x04  per channel key tables (relocated)
+    be_s32* table;        // 0x04  per channel key tables (relocated)
     u8 pad_8[0x18];
     f32 frame;        // 0x20  frame count + 1
     f32 rate;          // 0x24
@@ -164,7 +164,7 @@ struct ShapeWork {
     u8 num;            // 0x30
     u8 pad_31[3];
     u8* idx;           // 0x34  shape table index per channel
-    u16* flags;        // 0x38  per channel flags
+    be_u16* flags;        // 0x38  per channel flags
     u8 pad_3C[4];
     u16 x40;           // 0x40
     u8 pad_42[2];
@@ -175,8 +175,8 @@ struct ShapeWork {
 };
 
 struct ShapeEntry {
-    u32 ofs;     // 0x00  offset of the delta list from the shape table
-    s32 num;     // 0x04  entries: vertex index, dx, dy, dz (s16 each)
+    be_u32 ofs;     // 0x00  offset of the delta list from the shape table
+    be_s32 num;     // 0x04  entries: vertex index, dx, dy, dz (s16 each)
 };
 
 // Apply the shape `data` at `rate` to the vertex buffer `dst` (8-byte vertices, s16 xyz).
@@ -204,17 +204,17 @@ void CalculateShape_new(cModelInfo* info, f32 rate, ShapeData* data, u8* dst)
     s16 tmp[1];
     u8 out[8];
     u32 i;
-    s32* p;
+    be_s32* p;
 
     memclr_asm(w, sizeof(ShapeWork));
     w->data = data;
     w->frame = (f32) (data->nFrame & 0x3FFF) + 1.0f;
     w->num = w->data->num;
-    w->flags = (u16*) ((u8*) w->data + 3);
+    w->flags = (be_u16*) ((u8*) w->data + 3);
     w->idx = (u8*) w->data + (w->num * 2 + 3);
-    p = (s32*) (w->idx + w->num);
-    p = (s32*) (((u32) p + 3) & ~3);
-    if (*++p >= 0) {
+    p = (be_s32*) (w->idx + w->num);
+    p = (be_s32*) (((u32) p + 3) & ~3);
+    if (NOT_RELOCATED_I(*++p)) {
         for (i = 0; i < w->num; i++) {
             p[i] += (u32) w->data;
         }
@@ -235,7 +235,7 @@ void CalculateShape_new(cModelInfo* info, f32 rate, ShapeData* data, u8* dst)
             if (w->flags[i] & 4) {
                 f32 v;
                 pp->type = w->flags[i] >> 12;
-                pp->key = (u8*) w->table[i];
+                pp->key = (u8*) (s32) w->table[i];
                 memclr_asm(out, 6);
                 HermiteInterpolation(pp, (Vec*) result, (u16*) out);
                 v = result[1] / 100.0f;
@@ -244,7 +244,7 @@ void CalculateShape_new(cModelInfo* info, f32 rate, ShapeData* data, u8* dst)
                 }
                 if (v != 0.0f) {
                     ShapeEntry* e = (ShapeEntry*) (w->idx[i] * 8 + (u32) tbl);
-                    s16* src = (s16*) (e->ofs + (u32) tbl);
+                    be_s16* src = (be_s16*) (e->ofs + (u32) tbl);
                     s32 num = e->num;
                     s32 n;
 

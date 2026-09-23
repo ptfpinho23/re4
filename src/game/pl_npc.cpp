@@ -2896,7 +2896,7 @@ void cSubChar::analyze()
         if (fabsf(pAnotherRoute->pos.y - pos.y) > 1000.0f) {
             up = 1;
         }
-        r = RouteCkToPos(this, &pAnotherRoute->pos, &distPos, up, &Route_h);
+        r = RouteCkToPos(this, BEVEC_PTR(pAnotherRoute->pos), &distPos, up, &Route_h);
     } else if (SUBFLAG(this)->check(3)) {
         if (fabsf(m_TargetPos.y - pos.y) > 1000.0f) {
             up = 1;

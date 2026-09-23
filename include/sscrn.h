@@ -17,7 +17,7 @@ struct ItemScreenWork;
 
 // Sub screen data archive (ss_cmmn.dat / ss_pzzl.dat): a table of byte offsets to its sub-files.
 struct SsArc {
-    u32 ofs[0x12];
+    be_u32 ofs[0x12];
 };
 #define SS_ARC_PTR(arc, no) ((void*) ((arc)->ofs[no] + (u32) (arc)))
 

@@ -15,25 +15,25 @@
 
 // Reverb parameters (room header `STB` efx[0] = DPL2, efx[1] = stereo).
 struct SndEfxParam {
-    u16 Aux_core;    // 0x00  default aux A per block type (low bytes)
-    u16 Aux_enemy;      // 0x02
-    u16 Aux_weapon;     // 0x04
-    u16 Aux_room;    // 0x06
-    f32 Delay;    // 0x08
-    f32 Time;        // 0x0C
-    f32 Coloration;  // 0x10
-    f32 Damping;     // 0x14
-    f32 Mix;         // 0x18
-    f32 Crosstalk;   // 0x1C
+    be_u16 Aux_core;    // 0x00  default aux A per block type (low bytes)
+    be_u16 Aux_enemy;      // 0x02
+    be_u16 Aux_weapon;     // 0x04
+    be_u16 Aux_room;    // 0x06
+    be_f32 Delay;    // 0x08
+    be_f32 Time;        // 0x0C
+    be_f32 Coloration;  // 0x10
+    be_f32 Damping;     // 0x14
+    be_f32 Mix;         // 0x18
+    be_f32 Crosstalk;   // 0x1C
 };
 
 // Room sound header (`STB` sub-file of the room archive, pSnd->hdr; DefEffTbl when missing).
 struct SndRoomHdr {
     SndEfxParam efx[2];   // 0x00
-    u32 curve_sel[32];    // 0x40   offsets to SndCurveSel, indexed by SND_SIT::curve_no
-    u32 vol_ofs[32];      // 0xC0   offsets to SndCurveTbl (volume by distance)
-    u32 pitch_ofs[32];    // 0x140  offsets to SndCurveTbl (pitch by distance)
-    u32 filter_ofs[32];   // 0x1C0  offsets to SndCurveTbl (filter by distance)
+    be_u32 curve_sel[32];    // 0x40   offsets to SndCurveSel, indexed by SND_SIT::curve_no
+    be_u32 vol_ofs[32];      // 0xC0   offsets to SndCurveTbl (volume by distance)
+    be_u32 pitch_ofs[32];    // 0x140  offsets to SndCurveTbl (pitch by distance)
+    be_u32 filter_ofs[32];   // 0x1C0  offsets to SndCurveTbl (filter by distance)
 };
 
 // Which distance curves a SIT uses (SndRoomHdr::curve_sel target).

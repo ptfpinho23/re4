@@ -156,13 +156,13 @@ struct EvtMtx {
 
 // Room "EVS" data: a table of offsets to the room's event files.
 struct EvsHeader {
-    s32 num;     // 0x00
-    u32 tblOfs;  // 0x04  EvsEntry[num]
+    be_s32 num;     // 0x00
+    be_u32 tblOfs;  // 0x04  EvsEntry[num]
 };
 
 struct EvsEntry {
-    u32 ofs;     // 0x00  event file offset
-    u32 x4;
+    be_u32 ofs;  // 0x00  event file offset
+    be_u32 x4;
 };
 
 // Object model type table of ExePacket_SetOm (name prefix, prefix length, SetObj18 type).
@@ -212,7 +212,7 @@ int Event::init(char* nm, EvtHeader* data)
     u32 i;
     int j;
 
-    if ((int) data >= 0) {
+    if (NOT_RELOCATED_I(data)) {
         pLog->err(0, 0, "Event::init : non addr");
         return 0;
     }
@@ -2601,11 +2601,11 @@ int EventMgr::SetEvt(void* data, u32* key)
     if (key != 0) {
         *key = 0;
     }
-    if ((int) hdr >= 0) {
+    if (NOT_RELOCATED_I(hdr)) {
         pLog->err(0, 0, "EventMgr::SetEvs : non addr[%x]", hdr);
         return 0;
     }
-    if (*(u32*) hdr->tag != 0x6576656E || hdr->tag[4] != 't') {
+    if (FILE_U32(*(u32*) hdr->tag) != 0x6576656E || hdr->tag[4] != 't') {
         pLog->err(0, 0, "EventMgr::SetEvt : invalid data");
         return 0;
     }
@@ -2723,7 +2723,7 @@ int EventMgr::DelEvt(void* pEvt, int delEvtFlag)
 // Registers a named data block (model/motion/camera/... file) for the event packets.
 int EventMgr::SetBin(char* nm, void* data, void* dat2, int flag)
 {
-    if ((int) data >= 0) {
+    if (NOT_RELOCATED_I(data)) {
         pLog->err(0, 0, "EventMgr::SetBin : non addr[%s]", nm);
         return 0;
     }
@@ -2784,11 +2784,11 @@ int EventMgr::SetEvd(char* nm, void* data, void* dat2, int flag)
     EvtBinEntry* e;
     int i;
 
-    if ((int) hdr >= 0) {
+    if (NOT_RELOCATED_I(hdr)) {
         pLog->err(0, 0, "EventMgr::SetEvd : non addr[%s]", nm);
         return 0;
     }
-    if (*(u32*) hdr->tag != 0x6576656E || hdr->tag[4] != 't') {
+    if (FILE_U32(*(u32*) hdr->tag) != 0x6576656E || hdr->tag[4] != 't') {
         pLog->err(0, 0, "EventMgr::SetEvd : invalid data[%s]", nm);
         return 0;
     }
@@ -2956,7 +2956,7 @@ int EventMgr::SetEvs(void* evs)
     u8* p;
     int i;
 
-    if ((int) hdr >= 0) {
+    if (NOT_RELOCATED_I(hdr)) {
         pLog->err(0, 0, "EventMgr::SetEvs : non addr");
         return 0;
     }

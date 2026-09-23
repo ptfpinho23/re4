@@ -5,14 +5,14 @@
 
 // game/hermite.cpp: 1-D cubic Hermite curve (C linkage).
 struct HermiteKey {
-    f32 t;    // 0x00  key time
-    f32 v;    // 0x04  value
-    f32 out;  // 0x08  tangent leaving this key
-    f32 in;   // 0x0C  tangent arriving at this key
+    be_f32 t;    // 0x00  key time
+    be_f32 v;    // 0x04  value
+    be_f32 out;  // 0x08  tangent leaving this key
+    be_f32 in;   // 0x0C  tangent arriving at this key
 };
 
 struct Hermite1 {
-    s32 num;             // 0x00
+    be_s32 num;             // 0x00
     HermiteKey key[1];   // 0x04  num entries
 };
 

@@ -9,31 +9,31 @@
 // Texture animation data; only the texture count is used here.
 struct TexAnm {
     u8 pad_0[8];
-    u16 numTex;  // 0x08
+    be_u16 numTex;  // 0x08
 };
 
 // Texture data file fed to cTexSys::DataLoad (version 3): three offset tables.
 struct TexData {
-    u32 version;  // 0x00  == 3
-    u32 ofsId;    // 0x04  -> TexIdTbl
-    u32 ofsTpl;   // 0x08  -> TexOfsTbl of TPLs
-    u32 ofsAnm;   // 0x0C  -> TexOfsTbl of TexAnms
+    be_u32 version;  // 0x00  == 3
+    be_u32 ofsId;    // 0x04  -> TexIdTbl
+    be_u32 ofsTpl;   // 0x08  -> TexOfsTbl of TPLs
+    be_u32 ofsAnm;   // 0x0C  -> TexOfsTbl of TexAnms
 };
 
 struct TexIdEnt {
-    u16 id;   // 0x00
-    u16 x2;
-    u32 x4;
+    be_u16 id;   // 0x00
+    be_u16 x2;
+    be_u32 x4;
 };
 
 struct TexIdTbl {
-    u32 num;          // 0x00
+    be_u32 num;          // 0x00
     TexIdEnt ent[1];  // 0x04
 };
 
 struct TexOfsTbl {
-    u32 num;     // 0x00
-    u32 ofs[1];  // 0x04  relative to the table
+    be_u32 num;     // 0x00
+    be_u32 ofs[1];  // 0x04  relative to the table
 };
 
 // One registered texture set (0x54 bytes).
