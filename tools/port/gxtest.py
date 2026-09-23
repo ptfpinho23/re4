@@ -486,6 +486,72 @@ def test_recording(rnd):
     print("  recorded display list (GXBeginDisplayList / GXCallDisplayList) ok")
 
 
+def test_lighting(rnd):
+    import math
+    # two point lights on a lit triangle with s8 normals (frac 6), the normal matrix a rotation,
+    # spot / distance attenuation from the SDK tables, ambient from the register
+    def e(v): return max(0.0, min(1.0, v))
+    tri = [((rnd.uniform(-5, 5), rnd.uniform(-5, 5), rnd.uniform(-5, 5)), (rnd.randrange(-64, 65), rnd.randrange(-64, 65), rnd.randrange(-64, 65))) for _ in range(3)]
+    mat = (200, 150, 100, 220)
+    amb = (20, 30, 40, 0)
+    l0 = dict(col=(255, 128, 64), pos=(3.0, 4.0, -2.0), dir=(0.0, 0.0, 1.0), a=(1.0, 0.0, 0.0), k=(1.0, 0.0, 0.0))
+    cutoff, ref, br = 30.0, 20.0, 0.25
+    cr = math.cos(math.radians(cutoff)); d1 = (1 - cr) ** 2
+    l1 = dict(col=(0, 200, 255), pos=(-2.0, 1.0, 5.0), dir=(0.6, 0.0, -0.8),
+              a=(cr * (cr - 2) / d1, 2 / d1, -1 / d1),                                    # GX_SP_SHARP
+              k=(1.0, 0.5 * (1 - br) / (br * ref), 0.5 * (1 - br) / (br * ref * ref)))    # GX_DA_MEDIUM
+    ang = 0.7
+    nm = [math.cos(ang), 0, math.sin(ang), 0, 1, 0, -math.sin(ang), 0, math.cos(ang)]
+    script = ("clearvcd\nvcd 9 1\nvcd 10 1\nvat 0 9 1 4 0\nvat 0 10 0 1 0\nnumtexgens 0\nposmtx 0 1 0 0 0 0 1 0 0 0 0 1 0\ncurmtx 0\n"
+              f"nrmmtx 0 {' '.join(str(x) for x in nm)}\n"
+              f"matcolor {' '.join(map(str, mat))}\nambcolor {' '.join(map(str, amb))}\n"
+              f"light 1 {' '.join(map(str, l0['col']))} 255 {' '.join(map(str, l0['pos'] + l0['dir'] + l0['a'] + l0['k']))}\n"
+              f"lightspot 2 {' '.join(map(str, l1['col']))} 255 {' '.join(map(str, l1['pos'] + l1['dir']))} {cutoff} 4 {ref} {br} 2\n"
+              "chanctrl 0 1 0 0 3 2 1\nchanctrl 2 0 0 0 0 2 2\nbegin 144 0 3\n")
+    for (x, y, z), (nx, ny, nz) in tri:
+        script += f"putf {x}\nputf {y}\nputf {z}\nputs8 {nx}\nputs8 {ny}\nputs8 {nz}\n"
+    prim, verts, _ = parse_draws(run(script))[0]
+    check(len(verts) == 3, "lighting: count")
+    for k, ((x, y, z), (nx, ny, nz)) in enumerate(tri):
+        n = (nx / 64, ny / 64, nz / 64)
+        tn = (nm[0] * n[0] + nm[1] * n[1] + nm[2] * n[2], nm[3] * n[0] + nm[4] * n[1] + nm[5] * n[2], nm[6] * n[0] + nm[7] * n[1] + nm[8] * n[2])
+        ln = math.sqrt(sum(c * c for c in tn)) or 1.0
+        tn = tuple(c / ln for c in tn)
+        il = [amb[0] / 255, amb[1] / 255, amb[2] / 255]
+        for l in (l0, l1):
+            lv = (l['pos'][0] - x, l['pos'][1] - y, l['pos'][2] - z)
+            d = math.sqrt(sum(c * c for c in lv)); lv = tuple(c / d for c in lv)
+            diff = max(0.0, sum(a * b for a, b in zip(tn, lv)))
+            cosa = -sum(a * b for a, b in zip(lv, l['dir']))
+            aatt = max(0.0, l['a'][0] + l['a'][1] * cosa + l['a'][2] * cosa * cosa)
+            den = l['k'][0] + l['k'][1] * d + l['k'][2] * d * d
+            att = aatt / den if den > 0 else 0.0
+            kk = att * diff
+            for i in range(3):
+                il[i] += kk * l['col'][i] / 255
+        exp = [int(mat[i] * e(il[i]) + 0.5) for i in range(3)] + [mat[3]]
+        got = verts[k][2]
+        gr, gg, gb, ga = got & 255, (got >> 8) & 255, (got >> 16) & 255, got >> 24
+        check(all(abs(a - b) <= 1 for a, b in zip((gr, gg, gb, ga), exp)), f"lighting vertex {k}: {(gr, gg, gb, ga)} vs {exp}")
+    print("  vertex lighting (point + spot lights, normal matrix, ambient, material) ok")
+
+
+def test_copies():
+    # an EFB copy (640x448 source, half-size RGBA8 destination) becomes an 8888 texture of the copy's
+    # size at the destination address; the A8 and Z8 formats pick the alpha / depth read-backs
+    script = point_setup() + "copysrc 0 0 640 448\ncopydst 320 224 6 1\ncopytex 0\ntexobjcopy 6 320 224\nbegin 184 0 1\nputf 1\nputf 2\nputf 3\n"
+    lines = run(script)
+    copy = [l for l in lines if l.startswith("COPY ")]
+    check(copy == ["COPY 320 224 0 0 480 272 0"], f"copy request {copy}")
+    psm, w, h, out = parse_draws(lines)[0][2]
+    check(psm == 3 and (w, h) == (320, 224), f"copy texture {psm} {w}x{h}")
+    check(struct.unpack_from("<I", out, 0)[0] == 0xFF000000 and struct.unpack_from("<I", out, 4 * 1000)[0] == 0xFF000000 + 1000, "copy texture is the read-back")
+    lines = run(point_setup() + "copysrc 0 0 128 128\ncopydst 64 64 39 0\ncopytex 1\ncopydst 64 64 17 1\ncopytex 0\n")
+    copy = [l for l in lines if l.startswith("COPY ") or l.startswith("CLEAR ")]
+    check(copy == ["COPY 64 64 0 0 96 77 1", "CLEAR ff000000 65535", "COPY 64 64 0 0 96 77 2"], f"alpha / depth copies {copy}")
+    print("  framebuffer copies (RGBA8 half size, A8, Z8, clear after copy) ok")
+
+
 def main():
     build()
     rnd = random.Random(11)
@@ -496,6 +562,8 @@ def main():
     test_primitives(rnd)
     test_dl_registers(rnd)
     test_recording(rnd)
+    test_lighting(rnd)
+    test_copies()
     print("gxtest ok")
 
 
