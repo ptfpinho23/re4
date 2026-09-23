@@ -542,9 +542,10 @@ def test_copies():
     script = point_setup() + "copysrc 0 0 640 448\ncopydst 320 224 6 1\ncopytex 0\ntexobjcopy 6 320 224\nbegin 184 0 1\nputf 1\nputf 2\nputf 3\n"
     lines = run(script)
     copy = [l for l in lines if l.startswith("COPY ")]
-    check(copy == ["COPY 320 224 0 0 480 272 0"], f"copy request {copy}")
+    # the frame is resampled straight to the power-of-two size the GE takes (512x256 for 320x224)
+    check(copy == ["COPY 512 256 0 0 480 272 0"], f"copy request {copy}")
     psm, w, h, out = parse_draws(lines)[0][2]
-    check(psm == 3 and (w, h) == (320, 224), f"copy texture {psm} {w}x{h}")
+    check(psm == 3 and (w, h) == (512, 256), f"copy texture {psm} {w}x{h}")
     check(struct.unpack_from("<I", out, 0)[0] == 0xFF000000 and struct.unpack_from("<I", out, 4 * 1000)[0] == 0xFF000000 + 1000, "copy texture is the read-back")
     lines = run(point_setup() + "copysrc 0 0 128 128\ncopydst 64 64 39 0\ncopytex 1\ncopydst 64 64 17 1\ncopytex 0\n")
     copy = [l for l in lines if l.startswith("COPY ") or l.startswith("CLEAR ")]
