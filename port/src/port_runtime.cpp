@@ -21,3 +21,11 @@ extern "C" void memset_asm(void* dst, int c, u32 n) { memset(dst, c, n); }
 // re-encoded for the PSP's own decoder in the port, so these stay no-ops.
 extern "C" void ADXGC_SetupDvdFs(void* p) { PORT_STUB("ADXGC_SetupDvdFs"); }
 extern "C" void ADXT_SetOutputMono(int sw) { PORT_STUB("ADXT_SetOutputMono"); }
+
+// The SDK's TEX library entry the game uses (texPalette.c TEXGet): descriptor `id` of a TPL the
+// caller has already relocated (cTexSys::CalcTplAddr and the per-unit calcTplAddr copies).
+#include "tpl.h"
+extern "C" TEXDescriptor* TEXGet(TEXPalette* pal, u32 id)
+{
+    return &pal->descriptorArray[id];
+}
