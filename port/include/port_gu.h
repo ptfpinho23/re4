@@ -77,7 +77,7 @@ void pg_cull(int enable, int frontCW);
 void pg_pixel_mask(unsigned int mask);
 void pg_fog(int enable, float nearz, float farz, unsigned int color);
 void pg_texture_off(void);
-void pg_texture(int psm, int w, int h, const void* data, int wrapS, int wrapT, int minFilt, int magFilt, int tfx, int tcc);  // tcc 1: the texture alpha counts
+void pg_texture(int psm, int w, int h, const void* data, int wrapS, int wrapT, int minFilt, int magFilt, int tfx, int tcc, float su, float sv);  // tcc 1: the texture alpha counts; su, sv scale the UVs
 void pg_projection(const float* m16);  // 16 floats, row-major (GameCube Mtx44)
 void pg_draw(int prim, int count, const PgVertex* verts);
 void* pg_get_memory(int bytes);

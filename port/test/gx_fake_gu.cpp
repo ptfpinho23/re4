@@ -23,10 +23,13 @@ void pg_cull(int e, int cw) { printf("CULL %d %d\n", e, cw); }
 void pg_pixel_mask(unsigned int m) { printf("MASK %08x\n", m); }
 void pg_fog(int e, float n, float f, unsigned int c) { printf("FOG %d %g %g %06x\n", e, n, f, c); }
 void pg_texture_off(void) { lastTexSet = 0; }
-void pg_texture(int psm, int w, int h, const void* data, int ws, int wt, int mn, int mg, int tfx, int tcc)
+int pg_dump_pending(void) { return 0; }
+extern "C" void port_trace(const char* fmt, ...) { (void) fmt; }
+void pg_texture(int psm, int w, int h, const void* data, int ws, int wt, int mn, int mg, int tfx, int tcc, float su, float sv)
 {
     lastTexData = data; lastTexPsm = psm; lastTexW = w; lastTexH = h; lastTexSet = 1;
     printf("TEXSTATE %d %d %d %d %d %d\n", ws, wt, mn, mg, tfx, tcc);
+    if (su != 1.0f || sv != 1.0f) printf("TEXSCALE %.9g %.9g\n", su, sv);
 }
 void pg_projection(const float* m)
 {

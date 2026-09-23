@@ -162,7 +162,7 @@ void pg_fog(int enable, float nearz, float farz, unsigned int color)
 
 void pg_texture_off(void) { sceGuDisable(GU_TEXTURE_2D); }
 
-void pg_texture(int psm, int w, int h, const void* data, int wrapS, int wrapT, int minFilt, int magFilt, int tfx, int tcc)
+void pg_texture(int psm, int w, int h, const void* data, int wrapS, int wrapT, int minFilt, int magFilt, int tfx, int tcc, float su, float sv)
 {
     sceGuEnable(GU_TEXTURE_2D);
     sceGuTexMode(psm, 0, 0, 0);
@@ -170,7 +170,7 @@ void pg_texture(int psm, int w, int h, const void* data, int wrapS, int wrapT, i
     sceGuTexFilter(minFilt, magFilt);
     sceGuTexWrap(wrapS, wrapT);
     sceGuTexFunc(tfx, tcc ? GU_TCC_RGBA : GU_TCC_RGB);
-    sceGuTexScale(1.0f, 1.0f);
+    sceGuTexScale(su, sv);  // the image may be padded to a power of two (port_gx fitTexture)
     sceGuTexOffset(0.0f, 0.0f);
 }
 

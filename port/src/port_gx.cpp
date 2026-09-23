@@ -14,6 +14,7 @@
 #include "port.h"
 #include "port_psp.h"
 #include "port_gu.h"
+extern "C" void port_trace(const char* fmt, ...);  // port_log.cpp (the log, not the screen)
 #include "gx.h"
 #include <string.h>
 #ifdef __PSP__
