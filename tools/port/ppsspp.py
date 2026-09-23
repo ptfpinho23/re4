@@ -184,8 +184,12 @@ async def run(cmds, timeout, jit, log):
                 if r.get("event") == "cpu.stepping":
                     print("stopped at %08x %s" % (r.get("pc", 0), sym(r.get("pc", 0))))
                     break
+                if os.environ.get("DEBUG"):
+                    print("event:", json.dumps(r)[:200])
         elif c == "regs":  # the CPU registers (while stopped)
             r = await emu.call("cpu.getAllRegs")
+            if os.environ.get("DEBUG"):
+                print("regs:", json.dumps(r)[:600])
             for cat in r.get("categories", []):
                 names, vals = cat.get("names", []), cat.get("uintValues", cat.get("floatValues", []))
                 fvals = cat.get("floatValues")
