@@ -170,6 +170,32 @@ async def run(cmds, timeout, jit, log):
             raw = base64.b64decode(r.get("base64", ""))
             for o in range(0, len(raw), 16):
                 print("%08x: %s" % (addr + o, " ".join("%02x" % b for b in raw[o:o + 16])))
+        elif c == "break":  # break ADDR: a breakpoint (hex address or symbol[+off])
+            addr = symaddr(cmds[i]); i += 1
+            await emu.call("cpu.breakpoint.add", address=addr, enabled=True)
+        elif c == "waitbreak":  # wait (up to N s) for the CPU to stop at a breakpoint, print the PC
+            secs = float(cmds[i]); i += 1
+            end = time.time() + secs
+            while time.time() < end:
+                try:
+                    r = json.loads(await asyncio.wait_for(ws.recv(), max(0.1, end - time.time())))
+                except asyncio.TimeoutError:
+                    break
+                if r.get("event") == "cpu.stepping":
+                    print("stopped at %08x %s" % (r.get("pc", 0), sym(r.get("pc", 0))))
+                    break
+        elif c == "regs":  # the CPU registers (while stopped)
+            r = await emu.call("cpu.getAllRegs")
+            for cat in r.get("categories", []):
+                names, vals = cat.get("names", []), cat.get("uintValues", cat.get("floatValues", []))
+                fvals = cat.get("floatValues")
+                out = []
+                for k, nme in enumerate(names):
+                    v = vals[k] if k < len(vals) else 0
+                    out.append("%s=%08x%s" % (nme, v & 0xffffffff, ("(%g)" % fvals[k]) if fvals and cat.get("name") == "FPU" else ""))
+                print(cat.get("name"), " ".join(out))
+        elif c == "cont":
+            await emu.call("cpu.resume")
         elif c == "quit":
             break
         else:
