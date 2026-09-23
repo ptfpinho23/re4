@@ -172,7 +172,12 @@ async def run(cmds, timeout, jit, log):
                 print("%08x: %s" % (addr + o, " ".join("%02x" % b for b in raw[o:o + 16])))
         elif c == "break":  # break ADDR: a breakpoint (hex address or symbol[+off])
             addr = symaddr(cmds[i]); i += 1
-            await emu.call("cpu.breakpoint.add", address=addr, enabled=True)
+            r = await emu.call("cpu.breakpoint.add", address=addr, enabled=True)
+            print("breakpoint at %08x: %s" % (addr, json.dumps(r)[:200]))
+        elif c == "watch":  # watch ADDR SIZE: break on a write to the range
+            addr, size = symaddr(cmds[i]), int(cmds[i + 1], 0); i += 2
+            r = await emu.call("memory.breakpoint.add", address=addr, size=size, enabled=True, write=True, read=False, change=False)
+            print("watchpoint at %08x+%d: %s" % (addr, size, json.dumps(r)[:200]))
         elif c == "waitbreak":  # wait (up to N s) for the CPU to stop at a breakpoint, print the PC
             secs = float(cmds[i]); i += 1
             end = time.time() + secs
