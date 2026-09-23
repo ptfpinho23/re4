@@ -22,7 +22,7 @@ extern "C" {
 
 // Sound information table entry (SIT, 0x18 bytes) inside an ISS block.
 typedef struct {
-    u16 note;       // 0x00  bank << 8 | program
+    be_u16 note;       // 0x00  bank << 8 | program
     s8 voice_start; // 0x02  first Snd_voice_work slot (sequences)
     s8 voice_num;   // 0x03  last slot offset (inclusive)
     s8 prio;        // 0x04
@@ -31,8 +31,8 @@ typedef struct {
     s8 aux_a;       // 0x07  AUX A send, < 0: from the area table (snd_iss3)
     s8 aux_b;       // 0x08  AUX B send, < 0: none
     s8 curve_no;    // 0x09  distance curve selector (game/snd.cpp SndCall), -1 = none
-    u16 pitch_l;   // 0x0A  random pitch range
-    u16 pitch_h;    // 0x0C
+    be_u16 pitch_l;   // 0x0A  random pitch range
+    be_u16 pitch_h;    // 0x0C
     u8 inner_vol;   // 0x0E  volume % while the player is on a type-3 floor attribute (0 = off)
     u8 xF;
     u8 srd_type;    // 0x10
@@ -41,12 +41,12 @@ typedef struct {
     s8 rnd_no;      // 0x13  random SE table selector (game/snd.cpp seRandomCheck)
     u8 se_flag;     // 0x14  0x1/0x2/0x4 -> Snd_ctrl_work.x56 bits, 0x20 area volume control
     u8 wall_vol;    // 0x15  volume % behind a wall (1..99), also the room BGM start volume
-    u16 flag;       // 0x16  0x4 seq, 0x100 type 1, 0x2000 chained, 0x4000 may steal an equal priority voice, 0x8000 dummy
+    be_u16 flag;       // 0x16  0x4 seq, 0x100 type 1, 0x2000 chained, 0x4000 may steal an equal priority voice, 0x8000 dummy
 } SND_SIT;
 
 // Room information table entry (RIT, 0x10 bytes) inside a stream block.
 typedef struct {
-    s16 str_no;     // 0x00  index into the block's stream header offset table
+    be_s16 str_no;     // 0x00  index into the block's stream header offset table
     s8 ch; // 0x02  first Snd_voice_work slot
     s8 poly;   // 0x03  last slot offset (inclusive)
     s8 vol;         // 0x04
@@ -56,30 +56,30 @@ typedef struct {
     s8 aux_b;        // 0x09
     s8 pl_id;      // 0x0A  default Snd_str_work slot
     u8 pad_B[1];
-    u16 flag;       // 0x0C  0x1 = surround type
+    be_u16 flag;       // 0x0C  0x1 = surround type
     s8 span;        // 0x0E  < 0: 0x7F
     s8 svol;        // 0x0F  surround volume, < 0: use vol
 } SND_RIT;
 
 // Stream header (SHD): ADPCM stream file description.
 typedef struct {
-    u32 flag;       // 0x00  0x1 stereo, 0x2 ?, 0x4 no loop, 0x8 ?
-    u32 samples;
-    u32 nibbles;    // 0x08  file length in nibbles, both channels (snd_str0: read_end = nibbles / 2 bytes) (PS2 nibbles)
-    u32 rate;       // 0x0C  sample rate
-    u32 start_nbl;
-    u32 lptop_nbl;  // 0x14  nibble offset
-    u32 lpend_nbl;   // 0x18  nibble offset
-    u32 offset;       // 0x1C  ARAM buffer address
-    u16 coef[16];  // 0x20
-    u16 coefR[16];  // 0x40
-    u16 gain[2];    // 0x60  L, R
-    u16 ps[2];      // 0x64
-    u16 yn1[2];             // 0x68
-    u16 yn2[2];             // 0x6C
-    u16 lps[2]; // 0x70
-    u16 lyn1[2];        // 0x74
-    u16 lyn2[2];        // 0x78
+    be_u32 flag;       // 0x00  0x1 stereo, 0x2 ?, 0x4 no loop, 0x8 ?
+    be_u32 samples;
+    be_u32 nibbles;    // 0x08  file length in nibbles, both channels (snd_str0: read_end = nibbles / 2 bytes) (PS2 nibbles)
+    be_u32 rate;       // 0x0C  sample rate
+    be_u32 start_nbl;
+    be_u32 lptop_nbl;  // 0x14  nibble offset
+    be_u32 lpend_nbl;   // 0x18  nibble offset
+    be_u32 offset;       // 0x1C  ARAM buffer address
+    be_u16 coef[16];  // 0x20
+    be_u16 coefR[16];  // 0x40
+    be_u16 gain[2];    // 0x60  L, R
+    be_u16 ps[2];      // 0x64
+    be_u16 yn1[2];             // 0x68
+    be_u16 yn2[2];             // 0x6C
+    be_u16 lps[2]; // 0x70
+    be_u16 lyn1[2];        // 0x74
+    be_u16 lyn2[2];        // 0x78
 } SND_SHD;
 
 typedef struct {
@@ -102,12 +102,12 @@ typedef struct {
 
 // Wavetable (DLS) file header: offsets to the SYN WTINST / WTREGION / WTART tables.
 typedef struct {
-    u32 x0;
-    u32 inst_ofs;   // 0x04
-    u32 rgn_ofs;    // 0x08
-    u32 art_ofs;    // 0x0C
-    u32 sample_ofs; // 0x10
-    u32 adpcm_ofs;  // 0x14
+    be_u32 x0;
+    be_u32 inst_ofs;   // 0x04
+    be_u32 rgn_ofs;    // 0x08
+    be_u32 art_ofs;    // 0x0C
+    be_u32 sample_ofs; // 0x10
+    be_u32 adpcm_ofs;  // 0x14
 } SND_WT_HDR;
 
 // Main control work (Snd_ctrl_work, 0xB4 bytes).

@@ -11,60 +11,60 @@ extern "C" {
 #define SYN_INPUT_BUFFER_SIZE 0x100
 
 typedef struct WTINST {
-    /* 0x00 */ u16 keyRegion[128];
+    /* 0x00 */ be_u16 keyRegion[128];
 } WTINST;
 
 typedef struct WTREGION {
     /* 0x00 */ u8 unityNote;
     /* 0x01 */ u8 keyGroup;
-    /* 0x02 */ s16 fineTune;
-    /* 0x04 */ s32 attn;
-    /* 0x08 */ u32 loopStart;
-    /* 0x0C */ u32 loopLength;
-    /* 0x10 */ u32 articulationIndex;
-    /* 0x14 */ u32 sampleIndex;
+    /* 0x02 */ be_s16 fineTune;
+    /* 0x04 */ be_s32 attn;
+    /* 0x08 */ be_u32 loopStart;
+    /* 0x0C */ be_u32 loopLength;
+    /* 0x10 */ be_u32 articulationIndex;
+    /* 0x14 */ be_u32 sampleIndex;
 } WTREGION;
 
 typedef struct WTART {
-    /* 0x00 */ s32 lfoFreq;
-    /* 0x04 */ s32 lfoDelay;
-    /* 0x08 */ s32 lfoAtten;
-    /* 0x0C */ s32 lfoPitch;
-    /* 0x10 */ s32 lfoMod2Atten;
-    /* 0x14 */ s32 lfoMod2Pitch;
-    /* 0x18 */ s32 eg1Attack;
-    /* 0x1C */ s32 eg1Decay;
-    /* 0x20 */ s32 eg1Sustain;
-    /* 0x24 */ s32 eg1Release;
-    /* 0x28 */ s32 eg1Vel2Attack;
-    /* 0x2C */ s32 eg1Key2Decay;
-    /* 0x30 */ s32 eg2Attack;
-    /* 0x34 */ s32 eg2Decay;
-    /* 0x38 */ s32 eg2Sustain;
-    /* 0x3C */ s32 eg2Release;
-    /* 0x40 */ s32 eg2Vel2Attack;
-    /* 0x44 */ s32 eg2Key2Decay;
-    /* 0x48 */ s32 eg2Pitch;
-    /* 0x4C */ s32 pan;
+    /* 0x00 */ be_s32 lfoFreq;
+    /* 0x04 */ be_s32 lfoDelay;
+    /* 0x08 */ be_s32 lfoAtten;
+    /* 0x0C */ be_s32 lfoPitch;
+    /* 0x10 */ be_s32 lfoMod2Atten;
+    /* 0x14 */ be_s32 lfoMod2Pitch;
+    /* 0x18 */ be_s32 eg1Attack;
+    /* 0x1C */ be_s32 eg1Decay;
+    /* 0x20 */ be_s32 eg1Sustain;
+    /* 0x24 */ be_s32 eg1Release;
+    /* 0x28 */ be_s32 eg1Vel2Attack;
+    /* 0x2C */ be_s32 eg1Key2Decay;
+    /* 0x30 */ be_s32 eg2Attack;
+    /* 0x34 */ be_s32 eg2Decay;
+    /* 0x38 */ be_s32 eg2Sustain;
+    /* 0x3C */ be_s32 eg2Release;
+    /* 0x40 */ be_s32 eg2Vel2Attack;
+    /* 0x44 */ be_s32 eg2Key2Decay;
+    /* 0x48 */ be_s32 eg2Pitch;
+    /* 0x4C */ be_s32 pan;
 } WTART;
 
 typedef struct WTSAMPLE {
-    /* 0x00 */ u16 format;
-    /* 0x02 */ u16 sampleRate;
-    /* 0x04 */ u32 offset;
-    /* 0x08 */ u32 length;
-    /* 0x0C */ u16 adpcmIndex;
+    /* 0x00 */ be_u16 format;
+    /* 0x02 */ be_u16 sampleRate;
+    /* 0x04 */ be_u32 offset;
+    /* 0x08 */ be_u32 length;
+    /* 0x0C */ be_u16 adpcmIndex;
 } WTSAMPLE;
 
 typedef struct WTADPCM {
-    /* 0x00 */ u16 a[8][2];
-    /* 0x20 */ u16 gain;
-    /* 0x22 */ u16 pred_scale;
-    /* 0x24 */ u16 yn1;
-    /* 0x26 */ u16 yn2;
-    /* 0x28 */ u16 loop_pred_scale;
-    /* 0x2A */ u16 loop_yn1;
-    /* 0x2C */ u16 loop_yn2;
+    /* 0x00 */ be_u16 a[8][2];
+    /* 0x20 */ be_u16 gain;
+    /* 0x22 */ be_u16 pred_scale;
+    /* 0x24 */ be_u16 yn1;
+    /* 0x26 */ be_u16 yn2;
+    /* 0x28 */ be_u16 loop_pred_scale;
+    /* 0x2A */ be_u16 loop_yn1;
+    /* 0x2C */ be_u16 loop_yn2;
 } WTADPCM;
 
 typedef struct SYNSYNTH {

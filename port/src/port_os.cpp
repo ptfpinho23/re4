@@ -84,9 +84,51 @@ OSTime OSCalendarTimeToTicks(OSCalendarTime* td)
 }
 
 // ---- interrupts: the game masks them around queue updates; the port's callbacks are threads.
-BOOL OSDisableInterrupts(void) { return TRUE; }
-BOOL OSEnableInterrupts(void) { return TRUE; }
-BOOL OSRestoreInterrupts(BOOL level) { return level; }
+// Interrupt masking as a lock: the sound driver shares its state between the game's threads and
+// the audio frame, which the GameCube ran as an interrupt. A thread that disables interrupts holds
+// the lock (no nesting: like the MSR bit, Restore sets the state back), and the audio thread runs
+// the driver's frame under it (port_ax.cpp: port_intr_set_bypass, so the frame's own
+// Enable / Restore calls do nothing).
+static SceUID_ intrSema = -1;
+static int intrOwner;
+static int intrBypass;
+static void intrLock(void)
+{
+    if (intrSema < 0) intrSema = sceKernelCreateSema("re4intr", 0, 1, 1, NULL);
+    sceKernelWaitSema(intrSema, 1, NULL);
+    intrOwner = sceKernelGetThreadId();
+}
+static void intrUnlock(void)
+{
+    intrOwner = 0;
+    sceKernelSignalSema(intrSema, 1);
+}
+static inline int intrHeld(void) { return intrOwner != 0 && intrOwner == sceKernelGetThreadId(); }
+extern "C" void port_intr_set_bypass(int on)
+{
+    if (on) { intrLock(); intrBypass = intrOwner; } else { intrBypass = 0; intrUnlock(); }
+}
+BOOL OSDisableInterrupts(void)
+{
+    if (intrBypass && intrBypass == sceKernelGetThreadId()) return FALSE;
+    if (intrHeld()) return FALSE;
+    intrLock();
+    return TRUE;
+}
+BOOL OSEnableInterrupts(void)
+{
+    if (intrBypass && intrBypass == sceKernelGetThreadId()) return FALSE;
+    if (!intrHeld()) return TRUE;
+    intrUnlock();
+    return FALSE;
+}
+BOOL OSRestoreInterrupts(BOOL level)
+{
+    if (intrBypass && intrBypass == sceKernelGetThreadId()) return FALSE;
+    int held = intrHeld();
+    if (level) { if (held) intrUnlock(); } else { if (!held) intrLock(); }
+    return held ? FALSE : TRUE;
+}
 
 // ---- errors, alarms, fonts, misc
 OSErrorHandler OSSetErrorHandler(OSError error, OSErrorHandler handler) { return NULL; }

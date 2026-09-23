@@ -54,4 +54,9 @@ void pg_debug_print(int c, int r, unsigned int col, const char* t) {}
 void pg_dcache_writeback(const void* p, int n) {}
 void* pg_uncached(void* p) { return p; }
 void pg_wait_vblank(void) {}
+void pg_copy_frame(unsigned int* dst, int dstW, int dstH, int srcX, int srcY, int srcW, int srcH, int mode)
+{
+    printf("COPY %d %d %d %d %d %d %d\n", dstW, dstH, srcX, srcY, srcW, srcH, mode);
+    for (int i = 0; i < dstW * dstH; i++) dst[i] = 0xFF000000u | ((unsigned) (mode << 20) + i);
+}
 }

@@ -8,10 +8,10 @@
 void Snd_iss_blk_init(u32 blk_no, void* data)
 {
     SND_ISS_BLK* blk;
-    u32* p;
+    be_u32* p;
 
     blk = &Snd_iss_blk[blk_no];
-    p = (u32*) data;
+    p = (be_u32*) data;
     blk->num = *p++;
     blk->dls = (u8*) data + *p++;
     blk->sit = (SND_SIT*) ((u8*) data + *p++);
@@ -22,10 +22,10 @@ void Snd_iss_blk_init(u32 blk_no, void* data)
 void Snd_str_blk_init(u32 blk_no, void* data)
 {
     SND_STR_BLK* blk;
-    u32* p;
+    be_u32* p;
 
     blk = &Snd_str_blk[blk_no];
-    p = (u32*) data;
+    p = (be_u32*) data;
     blk->num = *p++;
     blk->shd = (u8*) data + *p++;
     blk->rit = (SND_RIT*) ((u8*) data + *p++);
@@ -65,7 +65,7 @@ SND_SHD* Snd_get_shd_adrs(u16 blk_no, u16 req_no)
 
     rit = Snd_get_rit_adrs(blk_no, req_no);
     shd = Snd_str_blk[blk_no].shd;
-    shd += ((u32*) shd)[rit->str_no];
+    shd += FILE_U32(((u32*) shd)[rit->str_no]);
     return (SND_SHD*) shd;
 }
 

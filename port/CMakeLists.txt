@@ -140,5 +140,5 @@ add_executable(re4 "${CMAKE_CURRENT_SOURCE_DIR}/app/psp_main.cpp" "${RE4_STUBS}"
 # User-mode PSP libraries only: the driver's own spec appends libc, libm, libstdc++, libpspsdk and
 # libpspuser after these. libpspkernel must not appear: its StdioForKernel / SysclibForKernel
 # import stubs would shadow libc's printf / strtol (unimplemented in user mode).
-target_link_libraries(re4 PRIVATE re4_flags re4_port pspgu pspge pspdisplay pspdebug pspctrl)
+target_link_libraries(re4 PRIVATE re4_flags re4_port pspgu pspge pspdisplay pspdebug pspctrl pspaudio)
 create_pbp_file(TARGET re4 TITLE "RE4 PSP port" MEMSIZE 1)

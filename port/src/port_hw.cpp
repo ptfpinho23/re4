@@ -59,6 +59,7 @@ u32 ARAlloc(u32 length)
 }
 
 u32 ARGetBaseAddress(void) { return 0x4000; }
+unsigned char* port_aram_ptr(void) { return port_aram; }  // the sound mixer reads samples from it
 u32 ARGetSize(void) { return PORT_ARAM_SIZE; }
 
 void ARQInit(void) {}

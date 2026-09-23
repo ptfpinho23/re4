@@ -198,4 +198,40 @@ void* pg_uncached(void* p) { return (void*) ((unsigned int) p | 0x40000000); }
 
 void pg_wait_vblank(void) { sceDisplayWaitVblankStart(); }
 
+void pg_copy_frame(unsigned int* dst, int dstW, int dstH, int srcX, int srcY, int srcW, int srcH, int mode)
+{
+    // the list so far must have drawn before the CPU reads the buffer; then the list restarts
+    sceGuFinish();
+    sceGuSync(0, 0);
+    unsigned int drawOfs = (swaps & 1) ? FRAME_BYTES : 0;
+    const unsigned int* color = (const unsigned int*) (0x44000000 + drawOfs);
+    const unsigned short* depth = (const unsigned short*) (0x44000000 + FRAME_BYTES * 2);
+    if (srcW < 1) srcW = 1;
+    if (srcH < 1) srcH = 1;
+    for (int y = 0; y < dstH; y++) {
+        int sy = srcY + y * srcH / dstH;
+        if (sy < 0) sy = 0;
+        if (sy >= PG_SCREEN_H) sy = PG_SCREEN_H - 1;
+        for (int x = 0; x < dstW; x++) {
+            int sx = srcX + x * srcW / dstW;
+            if (sx < 0) sx = 0;
+            if (sx >= PG_SCREEN_W) sx = PG_SCREEN_W - 1;
+            unsigned int v;
+            if (mode == 2) {
+                unsigned int z = depth[sy * BUF_W + sx] >> 8;
+                v = 0xFF000000u | (z << 16) | (z << 8) | z;
+            } else {
+                v = color[sy * BUF_W + sx];
+                if (mode == 1) {
+                    unsigned int a = v >> 24;
+                    v = (a << 24) | (a << 16) | (a << 8) | a;
+                }
+            }
+            dst[y * dstW + x] = v;
+        }
+    }
+    sceKernelDcacheWritebackRange(dst, dstW * dstH * 4);
+    sceGuStart(GU_DIRECT, guList);
+}
+
 }  // extern "C"

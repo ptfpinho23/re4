@@ -34,6 +34,7 @@ int main()
     static GXTexObj tex;
     static GXTlutObj tluts[4];
     static u8* recorded;
+    static u8 copyDest[0x100000];
     static u32 recordedLen;
     char line[1 << 20];
     GXInit(NULL, 0);
@@ -65,8 +66,19 @@ int main()
         else if (!strcmp(cmd, "tevorder")) { int s, c, m, col; sscanf(args, "%d %d %d %d", &s, &c, &m, &col); GXSetTevOrder(s, c, m, col); }
         else if (!strcmp(cmd, "numtexgens")) { int n; sscanf(args, "%d", &n); GXSetNumTexGens((u8) n); }
         else if (!strcmp(cmd, "matcolor")) { unsigned r, g, b, a; sscanf(args, "%u %u %u %u", &r, &g, &b, &a); GXColor c = {(u8) r, (u8) g, (u8) b, (u8) a}; GXSetChanMatColor(0, c); }
-        else if (!strcmp(cmd, "matsrc")) { int s; sscanf(args, "%d", &s); GXSetChanCtrl(0, 1, 0, s, 0, 0, 0); }
+        else if (!strcmp(cmd, "matsrc")) { int s; sscanf(args, "%d", &s); GXSetChanCtrl(0, 0, 0, s, 0, 0, 0); }
+        else if (!strcmp(cmd, "chanctrl")) { int c, e, am, ms, mask, df, af; sscanf(args, "%d %d %d %d %d %d %d", &c, &e, &am, &ms, &mask, &df, &af); GXSetChanCtrl(c, (u8) e, am, ms, (u32) mask, df, af); }
+        else if (!strcmp(cmd, "ambcolor")) { unsigned r, g, b, a; sscanf(args, "%u %u %u %u", &r, &g, &b, &a); GXColor c = {(u8) r, (u8) g, (u8) b, (u8) a}; GXSetChanAmbColor(0, c); }
+        else if (!strcmp(cmd, "light")) { unsigned mask, r, g, b, a; f32 v[12]; sscanf(args, "%u %u %u %u %u %f %f %f %f %f %f %f %f %f %f %f %f", &mask, &r, &g, &b, &a, &v[0], &v[1], &v[2], &v[3], &v[4], &v[5], &v[6], &v[7], &v[8], &v[9], &v[10], &v[11]);
+            GXLightObj lo; GXColor c = {(u8) r, (u8) g, (u8) b, (u8) a}; GXInitLightColor(&lo, c); GXInitLightPos(&lo, v[0], v[1], v[2]); GXInitLightDir(&lo, v[3], v[4], v[5]); GXInitLightAttn(&lo, v[6], v[7], v[8], v[9], v[10], v[11]); GXLoadLightObjImm(&lo, mask); }
+        else if (!strcmp(cmd, "lightspot")) { unsigned mask, r, g, b, a; f32 v[6], cutoff, ref, br; int sfn, dfn; sscanf(args, "%u %u %u %u %u %f %f %f %f %f %f %f %d %f %f %d", &mask, &r, &g, &b, &a, &v[0], &v[1], &v[2], &v[3], &v[4], &v[5], &cutoff, &sfn, &ref, &br, &dfn);
+            GXLightObj lo; GXColor c = {(u8) r, (u8) g, (u8) b, (u8) a}; GXInitLightColor(&lo, c); GXInitLightPos(&lo, v[0], v[1], v[2]); GXInitLightDir(&lo, v[3], v[4], v[5]); GXInitLightSpot(&lo, cutoff, sfn); GXInitLightDistAttn(&lo, ref, br, dfn); GXLoadLightObjImm(&lo, mask); }
+        else if (!strcmp(cmd, "nrmmtx")) { int id; f32 m[12]; sscanf(args, "%d %f %f %f %f %f %f %f %f %f", &id, &m[0], &m[1], &m[2], &m[4], &m[5], &m[6], &m[8], &m[9], &m[10]); m[3] = m[7] = m[11] = 0; GXLoadNrmMtxImm((const f32(*)[4]) m, (u32) id); }
         else if (!strcmp(cmd, "invalidate")) { GXInvalidateTexAll(); }
+        else if (!strcmp(cmd, "copysrc")) { int l, t, w, h; sscanf(args, "%d %d %d %d", &l, &t, &w, &h); GXSetTexCopySrc((u16) l, (u16) t, (u16) w, (u16) h); }
+        else if (!strcmp(cmd, "copydst")) { int w, h, f, m; sscanf(args, "%d %d %d %d", &w, &h, &f, &m); GXSetTexCopyDst((u16) w, (u16) h, f, (u8) m); }
+        else if (!strcmp(cmd, "copytex")) { int c; sscanf(args, "%d", &c); GXCopyTex(copyDest, (u8) c); }
+        else if (!strcmp(cmd, "texobjcopy")) { int f, w, h; sscanf(args, "%d %d %d", &f, &w, &h); GXInitTexObj(&tex, copyDest, (u16) w, (u16) h, f, 0, 0, 0); GXLoadTexObj(&tex, 0); }
         else if (!strcmp(cmd, "zmode")) { int e, f, u; sscanf(args, "%d %d %d", &e, &f, &u); GXSetZMode((u8) e, f, (u8) u); }
         else if (!strcmp(cmd, "blend")) { int t, s, d, o; sscanf(args, "%d %d %d %d", &t, &s, &d, &o); GXSetBlendMode(t, s, d, o); }
         else if (!strcmp(cmd, "cull")) { int m; sscanf(args, "%d", &m); GXSetCullMode(m); }

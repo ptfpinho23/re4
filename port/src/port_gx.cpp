@@ -41,7 +41,24 @@ static const u8* arrayBase[A_COUNT];
 static u32 arrayStride[A_COUNT];
 
 static f32 mtxMem[64][4];        // GX matrix memory: rows of the 3x4 position / texture matrices
+static f32 nrmMem[64][3];        // normal matrix memory: rows of the 3x3 normal matrices, same ids
 static u32 currentMtx;
+
+// Lighting on the CPU (the GE's lights work in its own model space; the game's are in view space
+// and its vertices carry per-vertex matrix indices, so the lit colour is computed here).
+struct Chan {
+    u8 enable, ambSrc, matSrc, diffFn, attnFn;
+    u32 lightMask;
+};
+static Chan chan[4];             // GX_COLOR0, GX_COLOR1, GX_ALPHA0, GX_ALPHA1
+static u32 chanAmbColor[2] = {0, 0};
+struct LightPort {               // kept inside the game's GXLightObj (0x40 bytes)
+    u32 color;                   // ABGR
+    f32 a0, a1, a2, k0, k1, k2;
+    f32 px, py, pz;
+    f32 dx, dy, dz;
+};
+static LightPort lights[8];
 static f32 projection[4][4];
 static int projType;
 static f32 viewport[6];          // left, top, wd, ht, nearz, farz
@@ -70,12 +87,23 @@ static TevStage tev[16];
 static u8 numTevStages = 1, numTexGens = 1, numChans = 1;
 static u32 texGenMtx[8];         // GX_IDENTITY or a texture matrix id
 static u32 chanMatColor[2] = {0xFFFFFFFF, 0xFFFFFFFF};
-static u8 chanMatSrc[2];         // GX_SRC_REG (0) = material register, GX_SRC_VTX (1) = vertex colour
 static u32 tevRegColor[4];
 
 static int cullMode;
 static u32 copyClearColor = 0xFF000000;
 static u32 copyClearZ = 0xFFFFFF;
+static u16 copySrc[4];           // GXSetTexCopySrc: left, top, width, height (EFB pixels)
+static u16 copyDstW, copyDstH;
+static u8 copyDstFmt;
+// Framebuffer copies (GXCopyTex): the game's destination buffer stays untouched and is the key; the
+// frame is read back into an 8888 buffer of the copy's size that the texture cache hands out.
+struct CopyRecord {
+    const void* dest;
+    u16 w, h;
+    u32* buf;
+};
+#define COPY_MAX 16
+static CopyRecord copies[COPY_MAX];
 static u32 colorMaskBits = 0;    // pixel mask bits (1 = write disabled)
 static u32 alphaMaskBits = 0;
 static int inited;
@@ -257,6 +285,16 @@ static void* convertTexture(const TexObjPort* t, const TlutPort* tlut, u8* psmOu
 
 static TexCacheEntry* cachedTexture(const TexObjPort* t)
 {
+    for (int i = 0; i < COPY_MAX; i++) {
+        if (copies[i].buf && copies[i].dest == t->data) {
+            static TexCacheEntry copyEntry;
+            copyEntry.data = t->data; copyEntry.tlut = NULL;
+            copyEntry.w = copies[i].w; copyEntry.h = copies[i].h;
+            copyEntry.fmt = t->format; copyEntry.psm = PG_PSM_8888;
+            copyEntry.converted = copies[i].buf;
+            return &copyEntry;
+        }
+    }
     const TlutPort* tlut = (t->isCI && t->tlutName < 20) ? tlutTable[t->tlutName] : NULL;
     const void* lutPtr = tlut ? tlut->lut : NULL;
     TexCacheEntry* victim = NULL;
@@ -321,7 +359,7 @@ static void applyDrawState(int hasVertexColor)
             int tfx = PG_TFX_MODULATE;
             if (tev[0].op == 3) tfx = PG_TFX_REPLACE;       // GX_REPLACE
             else if (tev[0].op == 1) tfx = PG_TFX_DECAL;    // GX_DECAL
-            pg_texture(e->psm, t->width, t->height, e->converted, t->wrapS == 0 ? 1 : 0, t->wrapT == 0 ? 1 : 0,
+            pg_texture(e->psm, e->w, e->h, e->converted, t->wrapS == 0 ? 1 : 0, t->wrapT == 0 ? 1 : 0,
                        t->minFilt == 0 ? 0 : 1, t->magFilt == 0 ? 0 : 1, tfx);
         } else {
             pg_texture_off();
@@ -382,10 +420,65 @@ static u32 readColor(const u8* p, u8 type, int bigEndian, int* size)
     return ((u32) a << 24) | ((u32) b << 16) | ((u32) g << 8) | r;
 }
 
+// The colour channel pair TEV stage 0 rasterises: 0 = COLOR0A0, 1 = COLOR1A1, -1 = none / zero.
+static int rasChannel(void)
+{
+    u8 c = tev[0].color;
+    if (c == 4) return 0;   // GX_COLOR0A0
+    if (c == 5) return 1;   // GX_COLOR1A1
+    return -1;
+}
+
 static u32 defaultColor(void)
 {
+    int ch = rasChannel();
+    if (ch < 0) return 0xFFFFFFFF;
     // GX_SRC_REG: the material register colour; otherwise (or when no vertex colour) white.
-    return chanMatSrc[0] == 0 ? chanMatColor[0] : 0xFFFFFFFF;
+    return chan[ch].matSrc == 0 ? chanMatColor[ch] : 0xFFFFFFFF;
+}
+
+static inline f32 clamp01(f32 v) { return v < 0.0f ? 0.0f : v > 1.0f ? 1.0f : v; }
+
+// GX vertex lighting of channel pair `ch`: illum = ambient + sum of light colour * attenuation *
+// diffuse, clamped, times the material; the alpha channel is not lit by the game (enable 0).
+static u32 lightColor(int ch, u32 vertexColor, const f32* n, f32 x, f32 y, f32 z)
+{
+    const Chan* c = &chan[ch];
+    u32 mat = c->matSrc == 0 ? chanMatColor[ch] : vertexColor;
+    u32 amb = c->ambSrc == 0 ? chanAmbColor[ch] : vertexColor;
+    f32 ir = (f32) (amb & 0xFF) / 255.0f, ig = (f32) ((amb >> 8) & 0xFF) / 255.0f, ib = (f32) ((amb >> 16) & 0xFF) / 255.0f;
+    for (int i = 0; i < 8; i++) {
+        if (!(c->lightMask & (1u << i))) continue;
+        const LightPort* l = &lights[i];
+        f32 lx = l->px - x, ly = l->py - y, lz = l->pz - z;
+        f32 d2 = lx * lx + ly * ly + lz * lz;
+        f32 d = sqrtf(d2);
+        if (d > 0.0f) { lx /= d; ly /= d; lz /= d; }
+        f32 diff = 1.0f;
+        if (c->diffFn != 0) {
+            diff = n[0] * lx + n[1] * ly + n[2] * lz;
+            if (c->diffFn == 2 && diff < 0.0f) diff = 0.0f;  // GX_DF_CLAMP
+        }
+        f32 att = 1.0f;
+        if (c->attnFn == 1) {  // GX_AF_SPOT
+            f32 cosA = -(lx * l->dx + ly * l->dy + lz * l->dz);
+            f32 aatt = l->a0 + l->a1 * cosA + l->a2 * cosA * cosA;
+            if (aatt < 0.0f) aatt = 0.0f;
+            f32 den = l->k0 + l->k1 * d + l->k2 * d2;
+            att = den > 0.0f ? aatt / den : 0.0f;
+        }
+        f32 k = att * diff;
+        if (k <= 0.0f) continue;
+        ir += k * (f32) (l->color & 0xFF) / 255.0f;
+        ig += k * (f32) ((l->color >> 8) & 0xFF) / 255.0f;
+        ib += k * (f32) ((l->color >> 16) & 0xFF) / 255.0f;
+    }
+    u32 r = (u32) ((f32) (mat & 0xFF) * clamp01(ir) + 0.5f);
+    u32 g = (u32) ((f32) ((mat >> 8) & 0xFF) * clamp01(ig) + 0.5f);
+    u32 b = (u32) ((f32) ((mat >> 16) & 0xFF) * clamp01(ib) + 0.5f);
+    const Chan* ca = &chan[ch + 2];
+    u32 a = (ca->matSrc == 0 ? chanMatColor[ch] : vertexColor) >> 24;
+    return (a << 24) | (b << 16) | (g << 8) | r;
 }
 
 static void transformPos(const f32* m, f32 x, f32 y, f32 z, PgVertex* v)
@@ -416,21 +509,26 @@ static const u8* drawVertices(Parser* s, int prim, int vf, u32 count)
     if (!out) return s->p;
     int hasColor = vcd[A_CLR0] != 0;
     u32 defColor = defaultColor();
+    int ch = rasChannel();
+    int lit = ch >= 0 && chan[ch].enable && vcd[A_NRM] != 0;
     const f32* curMtx = &mtxMem[currentMtx][0];
+    const f32* curNrm = &nrmMem[currentMtx][0];
     u32 o = 0;
     for (u32 n = 0; n < count; n++) {
         PgVertex v;
         const f32* m = curMtx;
+        const f32* nm = curNrm;
         v.u = v.v = 0.0f;
         v.color = defColor;
         v.x = v.y = v.z = 0.0f;
         f32 px = 0, py = 0, pz = 0;
+        f32 nx = 0, ny = 0, nz = 1;
         for (int a = 0; a < A_COUNT; a++) {
             u8 t = vcd[a];
             if (t == 0) continue;
             if (a == A_PNMTX) {
                 u32 idx = *s->p++;
-                if (idx < 64) m = &mtxMem[idx][0];
+                if (idx < 64) { m = &mtxMem[idx][0]; nm = &nrmMem[idx][0]; }
                 continue;
             }
             if (a >= A_TEXMTX0 && a < A_POS) {
@@ -453,7 +551,14 @@ static const u8* drawVertices(Parser* s, int prim, int vf, u32 count)
                 pz = f->pos.cnt ? readComp(d + 2 * cs, f->pos.type, s->bigEndian, f->pos.frac) : 0.0f;
                 size = cs * (f->pos.cnt ? 3 : 2);
             } else if (a == A_NRM) {
-                size = compSize(f->nrm.type) * (f->nrm.cnt ? 9 : 3);
+                int cs = compSize(f->nrm.type);
+                if (lit) {  // s8 normals are 1.0 = 64, s16 1.0 = 16384 (GX fixes the fraction)
+                    u8 frac = f->nrm.type == 1 ? 6 : f->nrm.type == 3 ? 14 : 0;
+                    nx = readComp(d, f->nrm.type, s->bigEndian, frac);
+                    ny = readComp(d + cs, f->nrm.type, s->bigEndian, frac);
+                    nz = readComp(d + 2 * cs, f->nrm.type, s->bigEndian, frac);
+                }
+                size = cs * (f->nrm.cnt ? 9 : 3);
             } else if (a == A_CLR0 || a == A_CLR1) {
                 const Fmt* c = &f->clr[a - A_CLR0];
                 u32 col = readColor(d, c->type, s->bigEndian, &size);
@@ -470,6 +575,19 @@ static const u8* drawVertices(Parser* s, int prim, int vf, u32 count)
             if (t == 1) s->p += size;
         }
         transformPos(m, px, py, pz, &v);
+        if (lit) {
+            f32 tn[3];
+            tn[0] = nm[0] * nx + nm[1] * ny + nm[2] * nz;
+            tn[1] = nm[3] * nx + nm[4] * ny + nm[5] * nz;
+            tn[2] = nm[6] * nx + nm[7] * ny + nm[8] * nz;
+            f32 len = sqrtf(tn[0] * tn[0] + tn[1] * tn[1] + tn[2] * tn[2]);
+            if (len > 0.0f) { tn[0] /= len; tn[1] /= len; tn[2] /= len; }
+            v.color = lightColor(ch, v.color, tn, v.x, v.y, v.z);
+        } else if (ch >= 0 && chan[ch].enable) {
+            // lit without normals: ambient only
+            static const f32 up[3] = {0.0f, 0.0f, 0.0f};
+            v.color = lightColor(ch, v.color, up, v.x, v.y, v.z);
+        }
         applyTexMtx(texGenMtx[0], &v.u, &v.v);
         if (quads) {
             u32 q = n & 3;
@@ -579,6 +697,12 @@ void GXInit_port(void)
     }
     for (int i = 0; i < 16; i++) { tev[i].coord = 0; tev[i].map = 0xFF; tev[i].color = 0xFF; tev[i].op = 0; }
     tev[0].map = 0;
+    tev[0].color = 4;  // GXInit: stage 0 rasterises GX_COLOR0A0
+    for (int i = 0; i < 64; i++) {
+        nrmMem[i][0] = (i % 3 == 0) ? 1.0f : 0.0f;
+        nrmMem[i][1] = (i % 3 == 1) ? 1.0f : 0.0f;
+        nrmMem[i][2] = (i % 3 == 2) ? 1.0f : 0.0f;
+    }
     for (int i = 0; i < 8; i++) texGenMtx[i] = 60;
     viewport[0] = 0; viewport[1] = 0; viewport[2] = efbW; viewport[3] = efbH; viewport[4] = 0; viewport[5] = 1;
 }
@@ -671,7 +795,14 @@ void GXLoadPosMtxImm(const f32 mtx[3][4], u32 id)
     if (id + 2 < 64) memcpy(&mtxMem[id][0], mtx, 12 * sizeof(f32));
 }
 
-void GXLoadNrmMtxImm(const f32 mtx[3][4], u32 id) {}
+void GXLoadNrmMtxImm(const f32 mtx[3][4], u32 id)
+{
+    if (id + 2 < 64) {
+        for (int r = 0; r < 3; r++) {
+            nrmMem[id + r][0] = mtx[r][0]; nrmMem[id + r][1] = mtx[r][1]; nrmMem[id + r][2] = mtx[r][2];
+        }
+    }
+}
 
 void GXLoadTexMtxImm(const f32 mtx[][4], u32 id, int type)
 {
@@ -937,24 +1068,77 @@ void GXSetTexCoordGen2(int dst, int func, int src, u32 mtx, u8 normalize, u32 pt
     if (dst >= 0 && dst < 8) texGenMtx[dst] = mtx;
 }
 
-void GXSetChanCtrl(int chan, u8 enable, int amb_src, int mat_src, u32 light_mask, int diff_fn, int attn_fn)
+void GXSetChanCtrl(int ch, u8 enable, int amb_src, int mat_src, u32 light_mask, int diff_fn, int attn_fn)
 {
-    if (chan == 0 || chan == 2) chanMatSrc[0] = (u8) mat_src;
+    if (ch < 0 || ch > 3) return;
+    Chan* c = &chan[ch];
+    c->enable = enable; c->ambSrc = (u8) amb_src; c->matSrc = (u8) mat_src;
+    c->lightMask = light_mask; c->diffFn = (u8) diff_fn; c->attnFn = (u8) attn_fn;
 }
-void GXSetChanMatColor(int chan, GXColor color)
+// GX_COLOR0 / GX_ALPHA0 / GX_COLOR0A0 (0, 2, 4) set pair 0; GX_COLOR1 / GX_ALPHA1 / GX_COLOR1A1 pair 1.
+void GXSetChanMatColor(int ch, GXColor color)
 {
     u32 c = ((u32) color.a << 24) | ((u32) color.b << 16) | ((u32) color.g << 8) | color.r;
-    if (chan == 0 || chan == 2 || chan == 4) chanMatColor[0] = c; else chanMatColor[1] = c;
+    if (ch == 0 || ch == 2 || ch == 4) chanMatColor[0] = c; else chanMatColor[1] = c;
 }
-void GXSetChanAmbColor(int chan, GXColor color) {}
-void GXInitLightColor(GXLightObj* obj, GXColor color) {}
-void GXInitLightPos(GXLightObj* obj, f32 x, f32 y, f32 z) {}
-void GXInitLightDir(GXLightObj* obj, f32 x, f32 y, f32 z) {}
-void GXInitLightAttn(GXLightObj* obj, f32 a0, f32 a1, f32 a2, f32 k0, f32 k1, f32 k2) {}
-void GXInitLightAttnK(GXLightObj* obj, f32 k0, f32 k1, f32 k2) {}
-void GXInitLightSpot(GXLightObj* obj, f32 cutoff, int spot_fn) {}
-void GXInitLightDistAttn(GXLightObj* obj, f32 ref_dist, f32 ref_br, int dist_fn) {}
-void GXLoadLightObjImm(GXLightObj* obj, u32 light) {}
+void GXSetChanAmbColor(int ch, GXColor color)
+{
+    u32 c = ((u32) color.a << 24) | ((u32) color.b << 16) | ((u32) color.g << 8) | color.r;
+    if (ch == 0 || ch == 2 || ch == 4) chanAmbColor[0] = c; else chanAmbColor[1] = c;
+}
+static inline LightPort* lightOf(GXLightObj* obj) { return (LightPort*) obj; }
+void GXInitLightColor(GXLightObj* obj, GXColor color)
+{
+    lightOf(obj)->color = ((u32) color.a << 24) | ((u32) color.b << 16) | ((u32) color.g << 8) | color.r;
+}
+void GXInitLightPos(GXLightObj* obj, f32 x, f32 y, f32 z) { LightPort* l = lightOf(obj); l->px = x; l->py = y; l->pz = z; }
+void GXInitLightDir(GXLightObj* obj, f32 x, f32 y, f32 z) { LightPort* l = lightOf(obj); l->dx = x; l->dy = y; l->dz = z; }
+void GXInitLightAttn(GXLightObj* obj, f32 a0, f32 a1, f32 a2, f32 k0, f32 k1, f32 k2)
+{
+    LightPort* l = lightOf(obj);
+    l->a0 = a0; l->a1 = a1; l->a2 = a2; l->k0 = k0; l->k1 = k1; l->k2 = k2;
+}
+void GXInitLightAttnK(GXLightObj* obj, f32 k0, f32 k1, f32 k2) { LightPort* l = lightOf(obj); l->k0 = k0; l->k1 = k1; l->k2 = k2; }
+// The SDK's spot / distance attenuation coefficient tables (GXLight.c).
+void GXInitLightSpot(GXLightObj* obj, f32 cutoff, int spot_fn)
+{
+    LightPort* l = lightOf(obj);
+    f32 a0 = 1.0f, a1 = 0.0f, a2 = 0.0f;
+    if (cutoff > 0.0f && cutoff <= 90.0f) {
+        f32 cr = cosf(cutoff * 3.14159265f / 180.0f);
+        f32 d = (1.0f - cr) * (1.0f - cr);
+        switch (spot_fn) {
+        case 1: a0 = -1000.0f * cr; a1 = 1000.0f; a2 = 0.0f; break;                          // GX_SP_FLAT
+        case 2: a0 = -cr / (1.0f - cr); a1 = 1.0f / (1.0f - cr); a2 = 0.0f; break;           // GX_SP_COS
+        case 3: a0 = 0.0f; a1 = -cr / (1.0f - cr); a2 = 1.0f / (1.0f - cr); break;           // GX_SP_COS2
+        case 4: a0 = cr * (cr - 2.0f) / d; a1 = 2.0f / d; a2 = -1.0f / d; break;             // GX_SP_SHARP
+        case 5: a0 = -4.0f * cr / d; a1 = 4.0f * (1.0f + cr) / d; a2 = -4.0f / d; break;     // GX_SP_RING1
+        case 6: a0 = 1.0f - 2.0f * cr * cr / d; a1 = 4.0f * cr / d; a2 = -2.0f / d; break;   // GX_SP_RING2
+        default: break;                                                                     // GX_SP_OFF
+        }
+    }
+    l->a0 = a0; l->a1 = a1; l->a2 = a2;
+}
+void GXInitLightDistAttn(GXLightObj* obj, f32 ref_dist, f32 ref_br, int dist_fn)
+{
+    LightPort* l = lightOf(obj);
+    f32 k0 = 1.0f, k1 = 0.0f, k2 = 0.0f;
+    if (ref_dist >= 0.0f && ref_br > 0.0f && ref_br < 1.0f) {
+        switch (dist_fn) {
+        case 1: k1 = (1.0f - ref_br) / (ref_br * ref_dist); break;                                  // GX_DA_GENTLE
+        case 2: k1 = 0.5f * (1.0f - ref_br) / (ref_br * ref_dist); k2 = 0.5f * (1.0f - ref_br) / (ref_br * ref_dist * ref_dist); break;  // GX_DA_MEDIUM
+        case 3: k2 = (1.0f - ref_br) / (ref_br * ref_dist * ref_dist); break;                       // GX_DA_STEEP
+        default: break;                                                                             // GX_DA_OFF
+        }
+    }
+    l->k0 = k0; l->k1 = k1; l->k2 = k2;
+}
+void GXLoadLightObjImm(GXLightObj* obj, u32 light)
+{
+    for (int i = 0; i < 8; i++) {
+        if (light & (1u << i)) lights[i] = *lightOf(obj);
+    }
+}
 
 // --- textures
 void GXInitTexObj(GXTexObj* obj, void* image, u16 width, u16 height, int format, int wrap_s, int wrap_t, u8 mipmap)
@@ -1013,9 +1197,49 @@ u32 GXGetTexBufferSize(u16 width, u16 height, u32 format, u8 mipmap, u8 max_lod)
 }
 
 // --- framebuffer copies (not reproduced: the destination keeps whatever it held)
-void GXSetTexCopySrc(u16 left, u16 top, u16 wd, u16 ht) {}
-void GXSetTexCopyDst(u16 wd, u16 ht, int fmt, u8 mipmap) {}
-void GXCopyTex(void* dest, u8 clear) {}
+void GXSetTexCopySrc(u16 left, u16 top, u16 wd, u16 ht)
+{
+    copySrc[0] = left; copySrc[1] = top; copySrc[2] = wd; copySrc[3] = ht;
+}
+void GXSetTexCopyDst(u16 wd, u16 ht, int fmt, u8 mipmap)
+{
+    copyDstW = wd; copyDstH = ht; copyDstFmt = (u8) fmt;
+}
+void GXCopyTex(void* dest, u8 clear)
+{
+    if (!inited) GXInit_port();
+    immFlush();
+    CopyRecord* r = NULL;
+    for (int i = 0; i < COPY_MAX; i++) {
+        if (copies[i].buf && copies[i].dest == dest) { r = &copies[i]; break; }
+    }
+    if (r && (r->w != copyDstW || r->h != copyDstH)) {
+        free(r->buf);
+        r->buf = NULL;
+        r = NULL;
+    }
+    if (!r) {
+        for (int i = 0; i < COPY_MAX; i++) {
+            if (!copies[i].buf) { r = &copies[i]; break; }
+        }
+        if (!r) {  // recycle the oldest slot
+            r = &copies[0];
+            free(r->buf);
+            r->buf = NULL;
+        }
+        if (copyDstW == 0 || copyDstH == 0) return;
+        r->buf = (u32*) ALIGNED_ALLOC(copyDstW * copyDstH * 4);
+        if (!r->buf) return;
+        r->dest = dest; r->w = copyDstW; r->h = copyDstH;
+    }
+    // GX_CTF_A8 (0x27) keeps the alpha, the Z formats (GX_TF_Z8 0x11 .. GX_TF_Z24X8 0x16) the depth
+    int mode = copyDstFmt == 0x27 ? 1 : (copyDstFmt >= 0x11 && copyDstFmt <= 0x16) ? 2 : 0;
+    pg_copy_frame(r->buf, r->w, r->h, (int) (copySrc[0] * sx()), (int) (copySrc[1] * sy()),
+                  (int) (copySrc[2] * sx()), (int) (copySrc[3] * sy()), mode);
+    if (clear) {
+        pg_clear(copyClearColor, 65535, 1, 1);
+    }
+}
 void GXPeekZ(u16 x, u16 y, u32* z) { *z = 0xFFFFFF; }
 
 // --- misc

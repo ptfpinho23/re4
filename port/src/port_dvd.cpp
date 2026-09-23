@@ -62,6 +62,13 @@ static int findRoot(void)
     return 0;
 }
 
+// The memory card layer keeps its files next to the data tree.
+extern "C" const char* port_data_root(void)
+{
+    findRoot();
+    return dataRoot;
+}
+
 static void fullPath(char* out, const char* discPath)
 {
     while (*discPath == '/') discPath++;

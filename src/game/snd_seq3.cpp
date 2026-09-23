@@ -151,7 +151,7 @@ void Snd_iss_new_seq_work(SND_ISS_BLK* blk, SND_SIT* sit, SND_REQ_WORK* req)
     SYNInitSynth(&seq->synth, seq->wt, seq->aram, Snd_ctrl_work.aram_base, 30, 30, 1);
     bank = (u16) ((u16) (sit->note >> 8) & 0xFF);
     tbl = blk->seq;
-    ofs = ((u32*) tbl)[bank + 1];
+    ofs = FILE_U32(((u32*) tbl)[bank + 1]);
     seq->seq_top = blk->seq + ofs;
     seq->seq_pos = seq->seq_top;
     seq->seq_loop = seq->seq_top;

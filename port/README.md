@@ -153,11 +153,44 @@ font it could not load, which is the placeholder data's limit. `CPUCore = 0` (th
 in PPSSPP's ini makes the emulator report guest faults with the PC (`build/port/re4.nm` maps it
 to a function); the JIT reads zeros silently.
 
-The memory card API (`port/src/port_card.cpp`) reports no card, so the title screen takes its
-"no memory card" path; a memory-stick save file is later work. With the placeholder data the
+The memory card (`port/src/port_card.cpp`) is a 16 Mbit card in slot A whose files live under
+`card/` next to the data tree (`ms0:/PSP/GAME/RE4/card/`, created at the first probe): the
+save's data in "<name>", its CardStat in "<name>.stat"; every asynchronous call completes at
+once. The saves are this build's own structures, not GameCube saves. `tools/port/cardtest.py`
+checks the create / write / read / status / delete round trip on the host. With the placeholder data the
 boot now runs on past the font (the JIT reads the missing font as zeros) into the missing core
 archive, whose garbage relocation breaks the game heap (the debug display's OSCheckHeap
 messages): the placeholder data's limit, not a port fault.
 
-Not yet: hardware lighting, multi-stage TEV / indirect textures, framebuffer copies (the post
-filters), sound (AX / MIX / SYN / SEQ are stubs), saves on the memory stick, the CRI movie player.
+The CRI movie player (`port/src/port_movie.cpp`) is a handle that reports "play end" on its
+first frame: the title screen's attract movies and the openings pass in a frame (the generated
+NULL-handle stub crashed in cSofdec's interface-table calls). Decoding the .sfd streams is later
+work.
+
+Lighting is computed on the CPU in `port_gx.cpp` (the game's lights are in view space and its
+vertices carry matrix indices, which the GE's lights cannot follow): the channel controls,
+material / ambient registers, the eight light objects with the SDK's spot and distance
+attenuation tables, normals through the normal matrices (GXLoadNrmMtxImm), GX_DF_CLAMP /
+GX_AF_SPOT. Framebuffer copies (GXCopyTex) read the frame back from the GE into an 8888 buffer
+of the copy's size, keyed by the game's destination address, which the texture cache hands out
+when that address is bound as a texture; A8 copies keep the alpha, Z copies the depth. Both are
+covered by `tools/port/gxtest.py`.
+
+Sound: `port/src/port_ax.cpp` is the AX voice mixer and the MIX volume library the game's own
+sound driver (game/snd_*.cpp) programs, on a PSP audio thread. Every 5 ms AX frame it runs the
+driver's registered callback (voice manager, stream player, sequencer), then decodes the running
+voices (GameCube DSP-ADPCM from the ARAM buffer, or PCM), resamples them by their source ratio,
+applies the MIX volumes and pan, sums them and resamples the 32 kHz frames to the 44.1 kHz
+output. The driver reads a voice's state and current / end addresses straight from the voice
+block (as one u32 at the Hi half), which the mixer keeps up to date. The driver's file
+structures (the SIT / RIT / stream headers, the wavetable header and the SYN WT records the
+sound banks carry) are marked big-endian. OSDisableInterrupts / OSRestoreInterrupts became a
+lock (port_os.cpp): the driver shares its state between the game's threads and the audio
+frame, which the GameCube ran as an interrupt; the audio frame runs under the lock with the
+driver's own Enable / Restore calls bypassed. `tools/port/axtest.py` checks the mixer on the
+host (ADPCM encoded in Python: nibble order, headers, predictor, one-shot end, loop state,
+the two resampler modes, pan / volume). Not done: the MIDI synthesiser (SYN / SEQ: the
+sequenced BGM stays silent), the aux reverb / chorus sends, the low-pass filter, the volume
+envelope.
+
+Not yet: multi-stage TEV / indirect textures, the MIDI synthesiser, movie decoding.

@@ -86,6 +86,9 @@ void pg_debug_print(int col, int row, unsigned int color, const char* text);
 void pg_dcache_writeback(const void* p, int bytes);
 void* pg_uncached(void* p);
 void pg_wait_vblank(void);
+// Reads the frame being drawn (after finishing the GE's work) into an 8888 texture buffer, resampled
+// from the source rectangle to dstW x dstH: mode 0 colour, 1 alpha as grey, 2 depth as grey.
+void pg_copy_frame(unsigned int* dst, int dstW, int dstH, int srcX, int srcY, int srcW, int srcH, int mode);
 
 #ifdef __cplusplus
 }

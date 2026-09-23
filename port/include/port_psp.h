@@ -28,6 +28,10 @@ int sceKernelSignalSema(SceUID_ semaid, int signal);
 long long sceKernelGetSystemTimeWide(void);
 int sceKernelExitGame(void);
 
+int sceAudioChReserve(int channel, int samplecount, int format);
+int sceAudioChRelease(int channel);
+int sceAudioOutputPannedBlocking(int channel, int leftvol, int rightvol, void* buffer);
+
 int sceDisplayWaitVblankStart(void);
 unsigned int sceDisplayGetVcount(void);
 
@@ -71,6 +75,13 @@ int sceIoGetstat(const char* file, PspIoStat* stat);
 SceUID_ sceIoDopen(const char* dirname);
 int sceIoDclose(SceUID_ fd);
 #define PSP_O_RDONLY 0x0001
+#define PSP_O_WRONLY 0x0002
+#define PSP_O_RDWR 0x0003
+#define PSP_O_CREAT 0x0200
+#define PSP_O_TRUNC 0x0400
+int sceIoWrite(SceUID_ fd, const void* data, unsigned int size);
+int sceIoRemove(const char* file);
+int sceIoMkdir(const char* dir, int mode);
 #define PSP_SEEK_SET 0
 
 #define PSP_THREAD_ATTR_VFPU 0x00004000
