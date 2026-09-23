@@ -195,7 +195,11 @@ public:
 
     MesWork* getWork() { return &m_Msg[0]; }
     // Slot address the way the original computes it (index scaled first, then the base).
+#ifndef RE4_PORT
     Message* getMes(int no) { return (Message*) (no * sizeof(Message) + (u32) this + sizeof(u32)); }
+#else
+    Message* getMes(int no) { return &m_Msg[no]; }  // the vptr is first here (GCC 2.95 put it last: m_Msg at 4)
+#endif
 
     void setLayout(int no, int type);
     void setLanguage(int lang);

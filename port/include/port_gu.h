@@ -92,6 +92,7 @@ void pg_copy_frame(unsigned int* dst, int dstW, int dstH, int srcX, int srcY, in
 // Writes the frame on screen as raw 480x272 ABGR8888 to a file (a screenshot without a host).
 int pg_save_frame(const char* path);
 void pg_request_dump(const char* path);  // saves the next finished frame (the list's own draw buffer)
+int pg_dump_pending(void);               // 1 between pg_request_dump and the dump (port_gx traces the draws)
 
 #ifdef __cplusplus
 }

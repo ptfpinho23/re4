@@ -1,4 +1,3 @@
-#pragma GCC optimize("O0")
 // port/src/port_gx: the GameCube GX graphics API on the PSP GE.
 //
 // Geometry: GX vertices arrive either through the write-gather pipe (gx.h's inline writers, direct
@@ -642,7 +641,6 @@ static const u8* drawVertices(Parser* s, int prim, int vf, u32 count)
             }
             if (t == 1) s->p += size;
         }
-        { static int dbg; if (dbg < 12) { dbg++; port_trace("[vtx] n=%u p=%p pos %g %g %g uv %g %g type %d cnt %d\n", n, s->p, px, py, pz, v.u, v.v, f->pos.type, f->pos.cnt); } }
         transformPos(m, px, py, pz, &v);
         if (lit) {
             f32 tn[3];
@@ -677,6 +675,19 @@ static const u8* drawVertices(Parser* s, int prim, int vf, u32 count)
         for (u32 i = 0; i < o; i++) out[i].color = (out[i].color & 0xFF000000u) | (drawConstColor & 0x00FFFFFFu);
     }
     static const int primTbl[8] = {PG_TRIANGLES, PG_TRIANGLES, PG_TRIANGLES, PG_TRIANGLE_STRIP, PG_TRIANGLE_FAN, PG_LINES, PG_LINE_STRIP, PG_POINTS};
+    if (pg_dump_pending()) {  // a frame dump was requested (pg_request_dump): describe the draws of this frame
+        port_trace("[draw] prim %d vf %d count %u -> %u verts, be %d, mtx %d, pos type %d frac %d, tex %s, chan %d lit %d\n", prim, vf, count, o,
+                   s->bigEndian, currentMtx, f->pos.type, f->pos.frac, numTexGens ? "on" : "off", ch, lit);
+        const f32* m = curMtx;
+        port_trace("[draw]   mtx %g %g %g %g / %g %g %g %g / %g %g %g %g\n", m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8], m[9], m[10], m[11]);
+        const f32* pm = &projection[0][0];
+        port_trace("[draw]   proj type %d: %g %g %g %g / %g %g %g %g / %g %g %g %g / %g %g %g %g; viewport %g %g %g %g %g %g\n", projType,
+                   pm[0], pm[1], pm[2], pm[3], pm[4], pm[5], pm[6], pm[7], pm[8], pm[9], pm[10], pm[11], pm[12], pm[13], pm[14], pm[15],
+                   viewport[0], viewport[1], viewport[2], viewport[3], viewport[4], viewport[5]);
+        for (u32 i = 0; i < o && i < 4; i++) {
+            port_trace("[draw]   v%u %g %g %g uv %g %g col %08x\n", i, out[i].x, out[i].y, out[i].z, out[i].u, out[i].v, out[i].color);
+        }
+    }
     pg_draw(primTbl[prim & 7], (int) o, out);
     return s->p;
 }
@@ -735,7 +746,6 @@ static void immFlush(void)
         return;
     }
     Parser s = {immBuf, 0};
-    { static int dbg; if (dbg < 3) { dbg++; const u32* w = (const u32*) immBuf; port_trace("[imm] len %u need %u count %u fmt %d: %08x %08x %08x %08x %08x %08x | %08x %08x %08x %08x %08x %08x\n", immLen, immBytesNeeded, immCount, immFmt, w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7], w[8], w[9], w[10], w[11]); } }
     drawVertices(&s, immPrim, immFmt, immCount);
 }
 

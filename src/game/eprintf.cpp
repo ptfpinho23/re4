@@ -319,6 +319,11 @@ void EprintfDrawing()
 // Draws and clears the buffer (frame end).
 void EprintfFlush()
 {
+#ifdef RE4_PORT
+    if (eprintf_init == 0) {  // no font (the retail discs): the buffers were never allocated
+        return;
+    }
+#endif
     EprintfDrawing();
     EprintfBufferClear();
 }
@@ -334,7 +339,11 @@ void EprintfInit()
     TEXHeader* img;
 #line 832 "D:/Bio4/Prog/eprintf.cpp"
     req = DvdReadN(name, NULL, 0, 0, 0, 3, __FILE__, __LINE__);
+#ifndef RE4_PORT
     if (Dvd.ReadCheck(req, NULL, NULL, &addr) >= 0) {
+#else
+    if (Dvd.ReadCheck(req, NULL, NULL, &addr) == 1) {  // the retail discs have no moji8.tpl: no debug text
+#endif
         img = (TEXHeader*) ((u8*) addr + 0x14);
         GXInitTexObj(&fontTexObj, (void*) ((u32) img->data + (u32) addr), img->width, img->height, img->format, img->wrapS,
                      img->wrapT, 0);

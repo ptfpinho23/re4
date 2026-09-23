@@ -210,9 +210,9 @@ extern "C" void port_demo_run(void)
     f32 t = 0.0f;
     int frame = 0;
     for (;;) {
-        PADStatus pad;
-        PADRead(&pad);
-        if (pad.button & 0x1000) break;
+        PADStatus pad[4];  // PADRead fills the four channels
+        PADRead(pad);
+        if (pad[0].button & 0x1000) break;
         int mode = frame / 60;
         if (mode > 6) mode = 6;
         GXSetBlendMode(mode == 2 || mode == 6 ? 1 : 0, 4, 5, 0);

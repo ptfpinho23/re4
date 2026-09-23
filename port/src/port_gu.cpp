@@ -72,6 +72,7 @@ void pg_request_dump(const char* path)
 {
     strncpy(dumpPath, path, sizeof(dumpPath) - 1);
 }
+int pg_dump_pending(void) { return dumpPath[0] != 0; }  // port_gx traces its draws into the log meanwhile
 
 static int swaps;
 int pg_stat_draws, pg_stat_verts, pg_stat_clears;  // per frame, for the demo's log

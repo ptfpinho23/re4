@@ -2534,7 +2534,7 @@ void SndBlkInit(int type, int id, int no)
     Snd_iss_blk[blk].aram = SndMem.blk_aram[blk];
     adr = (u32) SndMem.blk_mram[blk];
     if (blk != 3 && blk != 4) {
-        adr += *(u32*) adr;
+        adr += FILE_U32(*(u32*) adr);  // the block's first word: offset of its ISS header
     }
     Snd_iss_blk_init(blk, (void*) adr);
     SND_BIT_SET(pSnd->blk_flag, blk);

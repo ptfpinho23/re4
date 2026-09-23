@@ -57,7 +57,11 @@ struct OSFontHeader {
 
 // Message slot address as an expression (not an inline call): the multiply lands in the same pseudo
 // as the sum, which is what the original codegen shows.
+#ifndef RE4_PORT
 #define MES(no) ((Message*) ((no) * sizeof(Message) + (u32) this + sizeof(u32)))
+#else
+#define MES(no) (&m_Msg[no])  // the vptr is first here (GCC 2.95 put it last: m_Msg at 4)
+#endif
 
 // Font file: offsets to the TPL and to the width table.
 struct MesFontFile {
