@@ -70,5 +70,5 @@ FootShadowTbl pl_fs_tbl = {6, pl_fsd_dat};
 FootShadowTbl Em10_fs_tbl = {6, Em10_fsd_dat};
 FootShadowTbl Em2b_fs_tbl = {6, Em2b_fsd_dat};
 FootShadowTbl Em2c_fs_tbl = {6, Em2c_fsd_dat};
-static FootShadowTbl Em32_fs_tbl = {18, Em32_fsd_dat};
+DOL_STATIC FootShadowTbl Em32_fs_tbl = {18, Em32_fsd_dat};
 FootShadowTbl Em39_fs_tbl = {6, pl_fsd_dat};
