@@ -25,15 +25,15 @@ enum DVD_HEADER_ID {
 };
 
 // One entry of the file header read in front of a multi-part file (header_buff, 64 entries).
-struct DvdHeader {
-    u32 type;    // 0x00  DVD_HEADER_ID: MRAM, snd block (ARAM), snd PCM (MRAM), ARAM, nested header, -2 skip, -1 end
-    u32 size;    // 0x04
-    u32 dest;    // 0x08  explicit destination (0 = next free MRAM/ARAM address)
-    u32 ofs;     // 0x0C  offset inside the file
-    u32 sndType; // 0x10  sound block (0..8), 8 = enemy (index from SndEmDataReadCheck)
-    u32 sndArg;  // 0x14
-    u32 sndNo;   // 0x18
-    u32 x1C;
+struct DvdHeader {  // file-resident (read from the disc in front of the file): big-endian fields
+    be_u32 type;    // 0x00  DVD_HEADER_ID: MRAM, snd block (ARAM), snd PCM (MRAM), ARAM, nested header, -2 skip, -1 end
+    be_u32 size;    // 0x04
+    be_u32 dest;    // 0x08  explicit destination (0 = next free MRAM/ARAM address)
+    be_u32 ofs;     // 0x0C  offset inside the file
+    be_u32 sndType; // 0x10  sound block (0..8), 8 = enemy (index from SndEmDataReadCheck)
+    be_u32 sndArg;  // 0x14
+    be_u32 sndNo;   // 0x18
+    be_u32 x1C;
 };
 
 // Read request parameters handed to cDvd::ReadReq by DvdRead/DvdReadN (`DvdReqWork`, 0x6C).
