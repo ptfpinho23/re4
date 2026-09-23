@@ -5,7 +5,7 @@ buttons, take screenshots, read the game's log. Needs the `websockets` package (
     ppsspp.py [-t SECS] [-j] [--log FILE] CMD...      GUI=1 in the environment: PPSSPPSDL instead of headless
       wait N            run for N seconds
       press BTN[,BTN]   press buttons (cross circle square triangle up down left right start
-                        select l r) for 0.2 s;  hold BTN N / release BTN
+                        select l r) for 0.2 s;  hold BTN N;  down BTN / up BTN
       shot FILE.png     screenshot of the current frame
       analog X Y        left stick (-1..1)
       where             every thread's PC as a function (build/port/re4.nm)
@@ -121,6 +121,10 @@ async def run(cmds, timeout, jit, log):
             await emu.call("input.buttons.send", buttons={n: True for n in names})
             await emu.drain(secs)
             await emu.call("input.buttons.send", buttons={n: False for n in names})
+        elif c in ("down", "up"):  # down BTN[,BTN] / up BTN[,BTN]: press and hold / release
+            names = cmds[i].split(","); i += 1
+            await emu.call("input.buttons.send", buttons={n: c == "down" for n in names})
+            await emu.drain(0.1)
         elif c == "analog":
             x, y = float(cmds[i]), float(cmds[i + 1]); i += 2
             await emu.call("input.analog.send", stick="left", x=x, y=y)
