@@ -47,9 +47,9 @@ void setMsgBG(int a, int flag);
 // Sub screen data archive (SndMem.sub_adr): offsets to its sub-files.
 // Archive header shared by the sub screen sound data (SndMem.sub_adr: [0] icon/banner TPL,
 // [1] message table) and ss/cmn/save_?.dat (CardID textures, save/load frames, file list, ...).
-struct CardArc {
-    u32 pad_0[4];
-    u32 ofs[6];      // 0x10  offsets from the archive start
+struct CardArc {  // file-resident: big-endian fields
+    be_u32 pad_0[4];
+    be_u32 ofs[6];   // 0x10  offsets from the archive start
 };
 
 // Pointers of the game save block (pSaveData).
