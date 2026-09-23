@@ -87,7 +87,13 @@ struct TevStage {
 };
 static TevStage tev[16];
 static u8 numTevStages = 1, numTexGens = 1, numChans = 1;
-static u32 texGenMtx[8];         // GX_IDENTITY or a texture matrix id
+// GXSetTexCoordGen: how texture coordinate `dst` is generated: func 0 = 3x4 matrix (s, t, q; the
+// coordinates are divided by q), 1 = 2x4; src 0 = the vertex position, 1 = the normal, 4.. = TEX0..;
+// mtx the texture matrix (60 = identity; a vertex-supplied TEXMTX index overrides it), postMtx the
+// post-transform matrix (125 = identity).
+struct TexGen { u8 func, src, normalize; u32 mtx, postMtx; };
+static TexGen texGen[8];
+static f32 ptMem[64][4];         // post-transform texture matrices (ids 64..127), rows
 static u32 chanMatColor[2] = {0xFFFFFFFF, 0xFFFFFFFF};
 static u32 tevRegColor[4];
 static u32 tevKColor[4];
@@ -98,6 +104,7 @@ static int drawConstColorOn;
 static u32 drawConstColor;
 
 static int cullMode;
+static int blendType, blendSrc, blendDst;  // GXSetBlendMode, for the frame trace
 static u32 copyClearColor = 0xFF000000;
 static u32 copyClearZ = 0xFFFFFF;
 static u16 copySrc[4];           // GXSetTexCopySrc: left, top, width, height (EFB pixels)
@@ -107,7 +114,8 @@ static u8 copyDstFmt;
 // frame is read back into an 8888 buffer of the copy's size that the texture cache hands out.
 struct CopyRecord {
     const void* dest;
-    u16 w, h;
+    u16 w, h;      // the copy the game asked for
+    u16 pw, ph;    // the buffer's size: a power of two up to 512 the frame is resampled to
     u32* buf;
 };
 #define COPY_MAX 16
@@ -198,12 +206,110 @@ static int compareFunc(int gx)
 struct TexCacheEntry {
     const void* data;
     const void* tlut;
-    u16 w, h;
+    u16 w, h;          // the GameCube texture's size (the cache key)
+    u16 pw, ph;        // the GE texture's size: a power of two up to 512 (fitTexture)
+    f32 su, sv;        // UV scale from the GameCube size to the GE one
     u8 fmt;
     u8 psm;
     void* converted;
     u32 lastUse;
 };
+
+static u32 pow2ceil(u32 v) { u32 p = 1; while (p < v) p <<= 1; return p; }
+
+// A DXT1 block row decoder for the oversize CMPR case (fitTexture): ABGR8888 out.
+static void decodeDxt1Block(const u8* b, u32* out, int stride, int bw, int bh)
+{
+    u16 c0 = (u16) (b[4] | (b[5] << 8)), c1 = (u16) (b[6] | (b[7] << 8));
+    u32 pal[4];
+    u32 r0 = (c0 >> 11) & 31, g0 = (c0 >> 5) & 63, b0 = c0 & 31, r1 = (c1 >> 11) & 31, g1 = (c1 >> 5) & 63, b1 = c1 & 31;
+    r0 = r0 << 3 | r0 >> 2; g0 = g0 << 2 | g0 >> 4; b0 = b0 << 3 | b0 >> 2;
+    r1 = r1 << 3 | r1 >> 2; g1 = g1 << 2 | g1 >> 4; b1 = b1 << 3 | b1 >> 2;
+    pal[0] = 0xFF000000u | (b0 << 16) | (g0 << 8) | r0;
+    pal[1] = 0xFF000000u | (b1 << 16) | (g1 << 8) | r1;
+    if (c0 > c1) {
+        pal[2] = 0xFF000000u | (((2 * b0 + b1) / 3) << 16) | (((2 * g0 + g1) / 3) << 8) | ((2 * r0 + r1) / 3);
+        pal[3] = 0xFF000000u | (((b0 + 2 * b1) / 3) << 16) | (((g0 + 2 * g1) / 3) << 8) | ((r0 + 2 * r1) / 3);
+    } else {
+        pal[2] = 0xFF000000u | (((b0 + b1) / 2) << 16) | (((g0 + g1) / 2) << 8) | ((r0 + r1) / 2);
+        pal[3] = 0;
+    }
+    for (int y = 0; y < bh; y++) {
+        u8 row = b[y];  // GE order: texel 0 in the low bits
+        for (int x = 0; x < bw; x++) out[y * stride + x] = pal[(row >> (x * 2)) & 3];
+    }
+}
+
+// The GE takes power-of-two textures up to 512 x 512. Pads the converted image to the next power
+// of two (edge texels replicated, so clamping samples the image's edge) and box-filters oversize
+// ones down by a power of two; CMPR is padded as blocks, or decoded first when it is oversize.
+// Returns the buffer to bind (conv itself when it already fits), its size and the UV scale.
+static void* fitTexture(void* conv, u8* psm, int w, int h, u16* pw, u16* ph, f32* su, f32* sv)
+{
+    u32 tw = pow2ceil((u32) w), th = pow2ceil((u32) h);
+    if (tw < 8) tw = 8;
+    if (th < 8) th = 8;
+    int fx = 1, fy = 1;
+    while (tw / fx > 512) fx <<= 1;
+    while (th / fy > 512) fy <<= 1;
+    *su = (f32) w / (f32) tw;
+    *sv = (f32) h / (f32) th;
+    if ((u32) w == tw && (u32) h == th && fx == 1 && fy == 1) { *pw = (u16) w; *ph = (u16) h; return conv; }
+    if (*psm == PG_PSM_DXT1 && fx == 1 && fy == 1) {
+        int bw = (w + 3) / 4, bh = (h + 3) / 4, pbw = tw / 4, pbh = th / 4;
+        u8* out = (u8*) ALIGNED_ALLOC(pbw * pbh * 8);
+        if (!out) return conv;
+        for (int by = 0; by < pbh; by++) {
+            int sy = by < bh ? by : bh - 1;
+            for (int bx = 0; bx < pbw; bx++) {
+                int sx = bx < bw ? bx : bw - 1;
+                memcpy(out + (by * pbw + bx) * 8, (const u8*) conv + (sy * bw + sx) * 8, 8);
+            }
+        }
+        free(conv);
+        *pw = (u16) tw; *ph = (u16) th;
+        return out;
+    }
+    u32* src = (u32*) conv;
+    if (*psm == PG_PSM_DXT1) {  // oversize CMPR: decode, then treat as 8888
+        int bw = (w + 3) / 4, bh = (h + 3) / 4;
+        u32* dec = (u32*) ALIGNED_ALLOC(bw * 4 * bh * 4 * 4);
+        if (!dec) return conv;
+        for (int by = 0; by < bh; by++)
+            for (int bx = 0; bx < bw; bx++)
+                decodeDxt1Block((const u8*) conv + (by * bw + bx) * 8, dec + (by * 4) * (bw * 4) + bx * 4, bw * 4, 4, 4);
+        free(conv);
+        src = dec;
+        w = bw * 4; h = bh * 4;  // the decoded image is block-aligned; the scale stays the caller's
+        *psm = PG_PSM_8888;
+    }
+    int ow = (int) (tw / fx), oh = (int) (th / fy);
+    u32* out = (u32*) ALIGNED_ALLOC(ow * oh * 4);
+    if (!out) { *pw = (u16) w; *ph = (u16) h; *su = *sv = 1.0f; return src; }
+    for (int y = 0; y < oh; y++) {
+        int sy0 = y * fy;
+        if (sy0 >= h) sy0 = h - 1;
+        for (int x = 0; x < ow; x++) {
+            int sx0 = x * fx;
+            if (sx0 >= w) sx0 = w - 1;
+            u32 r = 0, g = 0, b = 0, a = 0, n = 0;
+            for (int dy = 0; dy < fy; dy++) {
+                int sy = sy0 + dy;
+                if (sy >= h) sy = h - 1;
+                for (int dx = 0; dx < fx; dx++) {
+                    int sx = sx0 + dx;
+                    if (sx >= w) sx = w - 1;
+                    u32 c = src[sy * w + sx];
+                    r += c & 0xFF; g += (c >> 8) & 0xFF; b += (c >> 16) & 0xFF; a += c >> 24; n++;
+                }
+            }
+            out[y * ow + x] = ((a / n) << 24) | ((b / n) << 16) | ((g / n) << 8) | (r / n);
+        }
+    }
+    free(src);
+    *pw = (u16) ow; *ph = (u16) oh;
+    return out;
+}
 #define TEXCACHE_MAX 384
 static TexCacheEntry texCache[TEXCACHE_MAX];
 static u32 texUseClock;
@@ -305,7 +411,8 @@ static TexCacheEntry* cachedTexture(const TexObjPort* t)
         if (copies[i].buf && copies[i].dest == t->data) {
             static TexCacheEntry copyEntry;
             copyEntry.data = t->data; copyEntry.tlut = NULL;
-            copyEntry.w = copies[i].w; copyEntry.h = copies[i].h;
+            copyEntry.w = copyEntry.pw = copies[i].pw; copyEntry.h = copyEntry.ph = copies[i].ph;  // the frame was resampled to the GE size
+            copyEntry.su = copyEntry.sv = 1.0f;
             copyEntry.fmt = t->format; copyEntry.psm = PG_PSM_8888;
             copyEntry.converted = copies[i].buf;
             return &copyEntry;
@@ -334,7 +441,11 @@ static TexCacheEntry* cachedTexture(const TexObjPort* t)
     u8 psm = PG_PSM_8888;
     void* conv = convertTexture(t, tlut, &psm);
     if (!conv) return NULL;
-    pg_dcache_writeback(conv, psm == PG_PSM_DXT1 ? ((t->width + 3) / 4) * ((t->height + 3) / 4) * 8 : t->width * t->height * 4);
+    u16 pw, ph;
+    f32 su, sv;
+    conv = fitTexture(conv, &psm, t->width, t->height, &pw, &ph, &su, &sv);
+    pg_dcache_writeback(conv, psm == PG_PSM_DXT1 ? (pw / 4) * (ph / 4) * 8 : pw * ph * 4);
+    victim->pw = pw; victim->ph = ph; victim->su = su; victim->sv = sv;
     victim->data = t->data;
     victim->tlut = lutPtr;
     victim->w = t->width;
@@ -432,8 +543,8 @@ static void applyDrawState(int hasVertexColor)
     }
     if (st->op == 1) tfx = PG_TFX_DECAL;         // GX_DECAL through GXSetTevOp
     int tcc = inputsMention(st->ain, 4) ? 1 : 0;  // the texture alpha counts only when the alpha combiner reads it
-    pg_texture(e->psm, e->w, e->h, e->converted, t->wrapS == 0 ? 1 : 0, t->wrapT == 0 ? 1 : 0,
-               t->minFilt == 0 ? 0 : 1, t->magFilt == 0 ? 0 : 1, tfx, tcc);
+    pg_texture(e->psm, e->pw, e->ph, e->converted, t->wrapS == 0 ? 1 : 0, t->wrapT == 0 ? 1 : 0,
+               t->minFilt == 0 ? 0 : 1, t->magFilt == 0 ? 0 : 1, tfx, tcc, e->su, e->sv);
 }
 
 // ---------------------------------------------------------------- vertex parsing
@@ -555,14 +666,39 @@ static void transformPos(const f32* m, f32 x, f32 y, f32 z, PgVertex* v)
     v->z = m[8] * x + m[9] * y + m[10] * z + m[11];
 }
 
-static void applyTexMtx(u32 id, f32* s, f32* t)
+// Texture coordinate generation (the XF unit): the source vector (position, normal or TEX0)
+// through the texture matrix (3x4: s, t, q; 2x4: s, t) and the post matrix, then divided by q.
+// The division is per vertex here (per pixel on the GameCube).
+static void genTexCoord(const TexGen* g, u32 mtxId, const f32* pos, const f32* nrm, f32 u, f32 v, f32* s, f32* t)
 {
-    if (id == 60 || id >= 64) return;  // GX_IDENTITY
-    const f32* m = &mtxMem[id][0];
-    f32 ns = m[0] * *s + m[1] * *t + m[3];
-    f32 nt = m[4] * *s + m[5] * *t + m[7];
-    *s = ns;
-    *t = nt;
+    f32 in[4];
+    if (g->src == 0) { in[0] = pos[0]; in[1] = pos[1]; in[2] = pos[2]; in[3] = 1.0f; }
+    else if (g->src == 1) { in[0] = nrm[0]; in[1] = nrm[1]; in[2] = nrm[2]; in[3] = 1.0f; }
+    else { in[0] = u; in[1] = v; in[2] = 1.0f; in[3] = 1.0f; }
+    f32 o[3];
+    if (mtxId == 60 || mtxId >= 64) {
+        o[0] = in[0]; o[1] = in[1]; o[2] = g->func == 0 ? in[2] : 1.0f;
+    } else {
+        const f32* m = &mtxMem[mtxId][0];
+        o[0] = m[0] * in[0] + m[1] * in[1] + m[2] * in[2] + m[3] * in[3];
+        o[1] = m[4] * in[0] + m[5] * in[1] + m[6] * in[2] + m[7] * in[3];
+        o[2] = g->func == 0 ? m[8] * in[0] + m[9] * in[1] + m[10] * in[2] + m[11] * in[3] : 1.0f;
+    }
+    if (g->normalize) {
+        f32 len = sqrtf(o[0] * o[0] + o[1] * o[1] + o[2] * o[2]);
+        if (len > 0.0f) { o[0] /= len; o[1] /= len; o[2] /= len; }
+    }
+    if (g->postMtx != 125 && g->postMtx >= 64 && g->postMtx + 2 < 128) {
+        const f32* p = &ptMem[g->postMtx - 64][0];
+        f32 r0 = p[0] * o[0] + p[1] * o[1] + p[2] * o[2] + p[3];
+        f32 r1 = p[4] * o[0] + p[5] * o[1] + p[6] * o[2] + p[7];
+        f32 r2 = p[8] * o[0] + p[9] * o[1] + p[10] * o[2] + p[11];
+        o[0] = r0; o[1] = r1; o[2] = r2;
+    }
+    f32 q = o[2];
+    if (g->func == 0 && q != 0.0f && q != 1.0f) { o[0] /= q; o[1] /= q; }
+    *s = o[0];
+    *t = o[1];
 }
 
 // Parses `count` vertices of vertex format `vf` from the stream and draws them as `prim`.
@@ -590,6 +726,7 @@ static const u8* drawVertices(Parser* s, int prim, int vf, u32 count)
         v.x = v.y = v.z = 0.0f;
         f32 px = 0, py = 0, pz = 0;
         f32 nx = 0, ny = 0, nz = 1;
+        u32 texMtx0 = texGen[0].mtx;
         for (int a = 0; a < A_COUNT; a++) {
             u8 t = vcd[a];
             if (t == 0) continue;
@@ -599,7 +736,8 @@ static const u8* drawVertices(Parser* s, int prim, int vf, u32 count)
                 continue;
             }
             if (a >= A_TEXMTX0 && a < A_POS) {
-                s->p++;
+                u32 idx = *s->p++;
+                if (a == A_TEXMTX0 && idx < 64) texMtx0 = idx;  // per-vertex texture matrix index
                 continue;
             }
             const u8* d;
@@ -619,7 +757,7 @@ static const u8* drawVertices(Parser* s, int prim, int vf, u32 count)
                 size = cs * (f->pos.cnt ? 3 : 2);
             } else if (a == A_NRM) {
                 int cs = compSize(f->nrm.type);
-                if (lit) {  // s8 normals are 1.0 = 64, s16 1.0 = 16384 (GX fixes the fraction)
+                if (lit || texGen[0].src == 1) {  // s8 normals are 1.0 = 64, s16 1.0 = 16384 (GX fixes the fraction)
                     u8 frac = f->nrm.type == 1 ? 6 : f->nrm.type == 3 ? 14 : 0;
                     nx = readComp(d, f->nrm.type, s->bigEndian, frac);
                     ny = readComp(d + cs, f->nrm.type, s->bigEndian, frac);
@@ -655,7 +793,10 @@ static const u8* drawVertices(Parser* s, int prim, int vf, u32 count)
             static const f32 up[3] = {0.0f, 0.0f, 0.0f};
             v.color = lightColor(ch, v.color, up, v.x, v.y, v.z);
         }
-        applyTexMtx(texGenMtx[0], &v.u, &v.v);
+        {
+            f32 pos[3] = {px, py, pz}, nrm[3] = {nx, ny, nz};
+            genTexCoord(&texGen[0], texMtx0, pos, nrm, v.u, v.v, &v.u, &v.v);
+        }
         if (quads) {
             u32 q = n & 3;
             static PgVertex quad[4];
@@ -678,6 +819,21 @@ static const u8* drawVertices(Parser* s, int prim, int vf, u32 count)
     if (pg_dump_pending()) {  // a frame dump was requested (pg_request_dump): describe the draws of this frame
         port_trace("[draw] prim %d vf %d count %u -> %u verts, be %d, mtx %d, pos type %d frac %d, tex %s, chan %d lit %d\n", prim, vf, count, o,
                    s->bigEndian, currentMtx, f->pos.type, f->pos.frac, numTexGens ? "on" : "off", ch, lit);
+        {
+            int si = textureStage();
+            const TevStage* st = &tev[si < 0 ? 0 : si];
+            TexObjPort* tx = st->map < 8 ? texMap[st->map] : NULL;
+            port_trace("[draw]   tev stage %d/%d: cin %d %d %d %d ain %d %d %d %d op %d map %d (%s %ux%u fmt %d) texgen func %d src %d mtx %u post %u; blend %d %d %d cull %d\n",
+                       si, numTevStages, st->cin[0], st->cin[1], st->cin[2], st->cin[3], st->ain[0], st->ain[1], st->ain[2], st->ain[3], st->op, st->map,
+                       tx ? "tex" : "none", tx ? tx->width : 0, tx ? tx->height : 0, tx ? tx->format : -1,
+                       texGen[0].func, texGen[0].src, texGen[0].mtx, texGen[0].postMtx, blendType, blendSrc, blendDst, cullMode);
+            for (int k = 0; k < numTevStages && k < 16; k++) {
+                if (k == si) continue;
+                const TevStage* o2 = &tev[k];
+                port_trace("[draw]   tev stage %d: cin %d %d %d %d ain %d %d %d %d op %d map %d coord %d kcsel %d\n", k, o2->cin[0], o2->cin[1], o2->cin[2], o2->cin[3],
+                           o2->ain[0], o2->ain[1], o2->ain[2], o2->ain[3], o2->op, o2->map, o2->coord, o2->kcsel);
+            }
+        }
         const f32* m = curMtx;
         port_trace("[draw]   mtx %g %g %g %g / %g %g %g %g / %g %g %g %g\n", m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8], m[9], m[10], m[11]);
         const f32* pm = &projection[0][0];
@@ -787,7 +943,7 @@ void GXInit_port(void)
         nrmMem[i][1] = (i % 3 == 1) ? 1.0f : 0.0f;
         nrmMem[i][2] = (i % 3 == 2) ? 1.0f : 0.0f;
     }
-    for (int i = 0; i < 8; i++) texGenMtx[i] = 60;
+    for (int i = 0; i < 8; i++) { texGen[i].func = 1; texGen[i].src = 4; texGen[i].normalize = 0; texGen[i].mtx = 60; texGen[i].postMtx = 125; }
     viewport[0] = 0; viewport[1] = 0; viewport[2] = efbW; viewport[3] = efbH; viewport[4] = 0; viewport[5] = 1;
 }
 
@@ -891,6 +1047,7 @@ void GXLoadNrmMtxImm(const f32 mtx[3][4], u32 id)
 void GXLoadTexMtxImm(const f32 mtx[][4], u32 id, int type)
 {
     if (id + 2 < 64) memcpy(&mtxMem[id][0], mtx, (type == 0 ? 12 : 8) * sizeof(f32));
+    else if (id >= 64 && id + 2 < 128) memcpy(&ptMem[id - 64][0], mtx, (type == 0 ? 12 : 8) * sizeof(f32));
 }
 
 void GXSetCurrentMtx(u32 id) { currentMtx = id < 64 ? id : 0; }
@@ -1048,6 +1205,7 @@ void GXSetZCompLoc(u8 before_tex) {}
 
 void GXSetBlendMode(int type, int src_factor, int dst_factor, int op)
 {
+    blendType = type; blendSrc = src_factor; blendDst = dst_factor;
     if (!inited) return;
     static const int srcTbl[8] = {PG_FIX, PG_FIX, PG_SRC_COLOR, PG_ONE_MINUS_SRC_COLOR, PG_SRC_ALPHA, PG_ONE_MINUS_SRC_ALPHA, PG_DST_ALPHA, PG_ONE_MINUS_DST_ALPHA};
     static const int dstTbl[8] = {PG_FIX, PG_FIX, PG_DST_COLOR, PG_ONE_MINUS_DST_COLOR, PG_SRC_ALPHA, PG_ONE_MINUS_SRC_ALPHA, PG_DST_ALPHA, PG_ONE_MINUS_DST_ALPHA};
@@ -1168,7 +1326,9 @@ void GXEnableTexOffsets(int coord, u8 line, u8 point) {}
 
 void GXSetTexCoordGen2(int dst, int func, int src, u32 mtx, u8 normalize, u32 pt)  // GXSetTexCoordGen is gx.h's macro over it
 {
-    if (dst >= 0 && dst < 8) texGenMtx[dst] = mtx;
+    if (dst < 0 || dst >= 8) return;
+    texGen[dst].func = (u8) func; texGen[dst].src = (u8) src; texGen[dst].normalize = normalize;
+    texGen[dst].mtx = mtx; texGen[dst].postMtx = pt;
 }
 
 void GXSetChanCtrl(int ch, u8 enable, int amb_src, int mat_src, u32 light_mask, int diff_fn, int attn_fn)
@@ -1331,13 +1491,16 @@ void GXCopyTex(void* dest, u8 clear)
             r->buf = NULL;
         }
         if (copyDstW == 0 || copyDstH == 0) return;
-        r->buf = (u32*) ALIGNED_ALLOC(copyDstW * copyDstH * 4);
+        u32 pw = pow2ceil(copyDstW), ph = pow2ceil(copyDstH);
+        if (pw > 512) pw = 512;
+        if (ph > 512) ph = 512;
+        r->buf = (u32*) ALIGNED_ALLOC(pw * ph * 4);
         if (!r->buf) return;
-        r->dest = dest; r->w = copyDstW; r->h = copyDstH;
+        r->dest = dest; r->w = copyDstW; r->h = copyDstH; r->pw = (u16) pw; r->ph = (u16) ph;
     }
     // GX_CTF_A8 (0x27) keeps the alpha, the Z formats (GX_TF_Z8 0x11 .. GX_TF_Z24X8 0x16) the depth
     int mode = copyDstFmt == 0x27 ? 1 : (copyDstFmt >= 0x11 && copyDstFmt <= 0x16) ? 2 : 0;
-    pg_copy_frame(r->buf, r->w, r->h, (int) (copySrc[0] * sx()), (int) (copySrc[1] * sy()),
+    pg_copy_frame(r->buf, r->pw, r->ph, (int) (copySrc[0] * sx()), (int) (copySrc[1] * sy()),
                   (int) (copySrc[2] * sx()), (int) (copySrc[3] * sy()), mode);
     if (clear) {
         pg_clear(copyClearColor, 65535, 1, 1);
