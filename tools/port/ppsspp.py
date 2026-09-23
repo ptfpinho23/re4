@@ -10,6 +10,7 @@ buttons, take screenshots, read the game's log. Needs the `websockets` package (
       analog X Y        left stick (-1..1)
       where             every thread's PC as a function (build/port/re4.nm)
       peek SYM[+off] N  hex dump N bytes at a symbol (or hex address)
+      poke SYM[+off] HEX|text   write bytes;  break ADDR / watch ADDR N / waitbreak SECS / regs / cont
       quit              stop the emulator (implied at the end)
     -t: PPSSPPHeadless --timeout (default 600)   -j: JIT instead of the interpreter
 The emulator's log goes to --log (default build/port/headless.log); the game's stdout lines and
@@ -47,6 +48,7 @@ class Emu:
     def __init__(self, ws):
         self.ws = ws
         self.pending = {}
+        self.stopped = None
 
     async def send(self, event, **kw):
         msg = dict(event=event, **kw)
@@ -57,6 +59,8 @@ class Emu:
         await self.send(event, **kw)
         while True:
             r = json.loads(await asyncio.wait_for(self.ws.recv(), 30))
+            if r.get("event") == "cpu.stepping":
+                self.stopped = r  # a breakpoint hit while waiting for another reply
             if r.get("event") == event:
                 return r
             if r.get("event") == "error" and r.get("level", 0) <= 3:
@@ -80,7 +84,9 @@ async def run(cmds, timeout, jit, log):
         args = ["PPSSPPSDL", str(EBOOT), "--windowed", "--escape-exit", "-d"]
         args.append("-j" if jit else "-i")
     else:
-        args = ["PPSSPPHeadless", str(EBOOT), "--timeout=%d" % timeout, "-l", "--debugger=%d" % PORT]
+        args = ["PPSSPPHeadless", str(EBOOT), "--timeout=%d" % timeout, "--debugger=%d" % PORT]
+        if os.environ.get("FULLLOG"):  # every emulator log line (HLE calls...): large, and it floods the debugger socket
+            args.append("-l")
         args.append("-j" if jit else "-i")
         args.append("--graphics=" + os.environ.get("PPSSPP_GRAPHICS", "software"))  # software: the frame is in VRAM for `shot`
     logf = open(log, "w")
@@ -170,6 +176,11 @@ async def run(cmds, timeout, jit, log):
             raw = base64.b64decode(r.get("base64", ""))
             for o in range(0, len(raw), 16):
                 print("%08x: %s" % (addr + o, " ".join("%02x" % b for b in raw[o:o + 16])))
+        elif c == "poke":  # poke SYM[+off] HEX|"text": write bytes (a text is NUL-terminated)
+            addr, what = symaddr(cmds[i]), cmds[i + 1]; i += 2
+            data = bytes.fromhex(what) if re.fullmatch(r"([0-9a-fA-F]{2})+", what) else what.encode() + b"\0"
+            r = await emu.call("memory.write", address=addr, base64=base64.b64encode(data).decode())
+            print("poke %08x %d bytes: %s" % (addr, len(data), json.dumps(r)[:120]))
         elif c == "break":  # break ADDR: a breakpoint (hex address or symbol[+off])
             addr = symaddr(cmds[i]); i += 1
             r = await emu.call("cpu.breakpoint.add", address=addr, enabled=True)
@@ -181,6 +192,10 @@ async def run(cmds, timeout, jit, log):
         elif c == "waitbreak":  # wait (up to N s) for the CPU to stop at a breakpoint, print the PC
             secs = float(cmds[i]); i += 1
             end = time.time() + secs
+            if emu.stopped:
+                r, emu.stopped = emu.stopped, None
+                print("stopped at %08x %s" % (r.get("pc", 0), sym(r.get("pc", 0))))
+                end = 0
             while time.time() < end:
                 try:
                     r = json.loads(await asyncio.wait_for(ws.recv(), max(0.1, end - time.time())))
@@ -196,14 +211,17 @@ async def run(cmds, timeout, jit, log):
             if os.environ.get("DEBUG"):
                 print("regs:", json.dumps(r)[:600])
             for cat in r.get("categories", []):
-                names, vals = cat.get("names", []), cat.get("uintValues", cat.get("floatValues", []))
+                names, vals = cat.get("registerNames", []), cat.get("uintValues", [])
                 fvals = cat.get("floatValues")
                 out = []
                 for k, nme in enumerate(names):
                     v = vals[k] if k < len(vals) else 0
-                    out.append("%s=%08x%s" % (nme, v & 0xffffffff, ("(%g)" % fvals[k]) if fvals and cat.get("name") == "FPU" else ""))
+                    if cat.get("name") == "GPR":
+                        REGS[nme] = v & 0xffffffff
+                    out.append("%s=%08x%s" % (nme, v & 0xffffffff, ("(%s)" % fvals[k]) if fvals and k < len(fvals) and cat.get("name") == "FPU" else ""))
                 print(cat.get("name"), " ".join(out))
         elif c == "cont":
+            emu.stopped = None
             await emu.call("cpu.resume")
         elif c == "quit":
             break
@@ -248,9 +266,14 @@ def sym(addr):
     return "%s+0x%x" % (name, addr - t[i][0])
 
 
+REGS = {}  # the GPRs of the last `regs`
+
+
 def symaddr(what):
     name, _, off = what.partition("+")
-    if re.fullmatch(r"(0x)?[0-9a-fA-F]+", name):
+    if name in REGS:
+        base = REGS[name]
+    elif re.fullmatch(r"(0x)?[0-9a-fA-F]+", name):
         base = int(name, 16)
     else:
         base = [a for a, n in symtab() if n == name]
