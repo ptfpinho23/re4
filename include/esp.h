@@ -7,15 +7,15 @@
 #include "model.h"
 #include "trans_ot.h"
 
-struct EspGenPrmW {
-    u32 xCC;           // 0xCC
-    u32 xD0;           // 0xD0
+struct EspGenPrmW {    // (file data: big-endian, like the record around it)
+    be_u32 xCC;        // 0xCC
+    be_u32 xD0;        // 0xD0
 };
 struct EspGenPrmH {
-    u16 xCC;           // 0xCC
-    u16 xCE;           // 0xCE
-    u16 xD0;           // 0xD0
-    u16 xD2;           // 0xD2
+    be_u16 xCC;        // 0xCC
+    be_u16 xCE;        // 0xCE
+    be_u16 xD0;        // 0xD0
+    be_u16 xD2;        // 0xD2
 };
 struct EspGenPrmB {
     u8 xCC, xCD, xCE, xCF;  // 0xCC

@@ -4,6 +4,9 @@
 // updates the view frustum. Also small helpers: stick direction in camera space, up / look
 // vectors, screen point to world ray.
 
+#ifdef RE4_PORT
+#include "port_psp.h"
+#endif
 #include "types.h"
 #include "vec.h"
 #include "global.h"
@@ -109,6 +112,14 @@ void CameraMove()
     }
     cam->Distance = PSVECDistance(&cam->param.pos, &cam->param.at);
     C_MTXLookAt(cam->v_mat, &cam->param.pos, &cam->Up, &cam->param.at);
+#ifdef RE4_PORT
+    {
+        static int nNan;
+        if (cam->v_mat[0][0] != cam->v_mat[0][0] && ++nNan <= 6)
+            port_trace("[port] CameraMove NaN view: pos %g %g %g at %g %g %g up %g %g %g roll %g fovy %g mat00 %g\n", cam->param.pos.x, cam->param.pos.y, cam->param.pos.z,
+                       cam->param.at.x, cam->param.at.y, cam->param.at.z, cam->Up.x, cam->Up.y, cam->Up.z, cam->param.roll, cam->param.fovy, cam->mat[0][0]);
+    }
+#endif
     View.move();
     CameraDebugInformation();
 }

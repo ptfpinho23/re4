@@ -183,8 +183,8 @@ struct SndWork {
 // "ESE" room file header (game/se_at.cpp), followed by the SeAt records at 0x10.
 struct SeAtHead {
     char magic[4];   // 0x00  "ESE"
-    u16 version;     // 0x04  0x100
-    u16 num;         // 0x06  record count
+    be_u16 version;  // 0x04  0x100
+    be_u16 num;      // 0x06  record count
     u8 pad_8[8];
 };
 
@@ -192,18 +192,18 @@ struct SeAtHead {
 struct SeAt {
     u8 flags;        // 0x00  bit0: enabled (SeAtSetOnOff)
     u8 no;           // 0x01  id (GetSeAtPtr)
-    u16 flags2;      // 0x02  bit0: no position
-    Vec pos;         // 0x04
-    u16 x10;         // 0x10
-    u16 blk;         // 0x12  SndCall block
-    u16 x14;         // 0x14
-    u16 se_no;       // 0x16  SndCall number
-    u16 interval;    // 0x18  fixed interval, 0 = random (rnd_base + Rnd() % rnd_range)
-    u16 wait;        // 0x1A  first-play delay
-    u16 cnt;         // 0x1C  frames until the next play
-    s16 repeat;      // 0x1E  plays left (0 = endless), -1 = finished
-    u16 rnd_base;    // 0x20
-    u16 rnd_range;   // 0x22
+    be_u16 flags2;   // 0x02  bit0: no position
+    BeVec pos;       // 0x04
+    be_u16 x10;      // 0x10
+    be_u16 blk;      // 0x12  SndCall block
+    be_u16 x14;      // 0x14
+    be_u16 se_no;    // 0x16  SndCall number
+    be_u16 interval; // 0x18  fixed interval, 0 = random (rnd_base + Rnd() % rnd_range)
+    be_u16 wait;     // 0x1A  first-play delay
+    be_u16 cnt;      // 0x1C  frames until the next play
+    be_s16 repeat;   // 0x1E  plays left (0 = endless), -1 = finished
+    be_u16 rnd_base; // 0x20
+    be_u16 rnd_range; // 0x22
     u8 pad_24[0x2C - 0x24];
 };
 

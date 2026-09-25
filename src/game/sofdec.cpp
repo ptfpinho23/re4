@@ -491,12 +491,14 @@ void cSofdec::finishMovie()
     pG->Stop_flg = m_stop_flg_bak;
     SetSystemVcnt(m_vcnt_save);
     StaFlagOff(pG, STA_MOVIE_ON);
+#ifndef RE4_PORT
     if (!StaFlagChk(pG, STA_TITLE)) {
         MemDestroyHeap(11);
         Aram.DmaTransReq(1, 0x740000, m_clrsize, 0x500000, 1);
         MemSignalHeap(m_save_cur_heap);
         MemSetCurrentHeap(m_save_cur_heap);
     }
+#endif
     SysFlagOff(pG, SYS_TRANS_STOP);
     if (!chkFlag(0x100)) {
         systemVISetBlack(0);
@@ -520,6 +522,7 @@ int cSofdec::initWork(const char* fname)
     pG->Stop_flg = 0xFFFFFFFF;
     m_disp_flg_bak = pG->Disp_flg;
     pG->Disp_flg = 0xFFFFFFFF;
+#ifndef RE4_PORT
     if (!StaFlagChk(pG, STA_TITLE)) {
         m_save_cur_heap = MemGetCurrentHeap();
         m_clrsize = MemGetHeapStartAddr(m_save_cur_heap);
@@ -528,6 +531,11 @@ int cSofdec::initWork(const char* fname)
         MemCreateHeap(11, m_clrsize, m_clrsize + 0x500000);
         MemSetCurrentHeap(11);
     }
+#else
+    // The movie player borrowed the game heap's first 5 MB (parked in ARAM at 0x740000, beyond
+    // the port's 8 MB ARAM buffer). The port's player (port_movie.cpp) decodes nothing yet and
+    // needs no memory: the heap stays as it is.
+#endif
     SysFlagOn(pG, SYS_TRANS_STOP);
     return 1;
 }

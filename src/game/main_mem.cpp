@@ -522,6 +522,11 @@ void* MemAlloc(u32 size, int release_flag)
     void* p;
 
     if (!DbgFlagChk(pG, DBG_APP_USE_DBMEM)) {
+#ifdef RE4_PORT
+        if (size > 0x800000) {  // a size read from an unconverted (big-endian) header, most likely: name the caller
+            OSReport("[port] MemAlloc(%x) from %p\n", size, __builtin_return_address(0));
+        }
+#endif
 #line 646
         p = MEM_ALLOC(size, 1, MEM_HEAP_CURRENT);
     } else {

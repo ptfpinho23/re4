@@ -250,12 +250,21 @@ void CalculateShape_new(cModelInfo* info, f32 rate, ShapeData* data, u8* dst)
 
                     for (n = 0; n < num; n++) {
                         s16* vtx = (s16*) (dst + *src++ * 8);
+#ifndef RE4_PORT
                         PSQ_ST_S16(PSQ_L_S16(src++) * v, tmp);
                         *vtx++ += tmp[0];
                         PSQ_ST_S16(PSQ_L_S16(src++) * v, tmp);
                         *vtx++ += tmp[0];
                         PSQ_ST_S16(PSQ_L_S16(src++) * v, tmp);
                         *vtx += tmp[0];
+#else
+                        // the vertex buffer and the delta list are big-endian: add in host order
+                        for (int k = 0; k < 3; k++, vtx++, src++) {
+                            s16 d = portQuantS16((f32) (s16) *src * v);
+                            *(u16*) vtx = __builtin_bswap16((u16) (s16) ((s16) __builtin_bswap16(*(u16*) vtx) + d));
+                        }
+                        (void) tmp;
+#endif
                     }
                 }
             }

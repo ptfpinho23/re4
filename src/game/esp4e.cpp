@@ -2,6 +2,10 @@
 // cloth pool follows the effect's position/angle and is disturbed by two sine fields (along x and
 // y) modulated by a global "wind" phase plus the effect's m_Speed. Entry points: Esp4e_Create,
 // cEsp4e::move / SetFreeWork / Destruct.
+#ifdef RE4_PORT
+#include "port_psp.h"
+extern "C" unsigned int sceKernelGetSystemTimeLow(void);
+#endif
 #include "atari.h"
 #include "light.h"
 #include "math_sub.h"
@@ -101,12 +105,21 @@ void cEsp4e::move()
     c->colG = (u8) m_Col_g;
     c->colB = (u8) m_Col_b;
     c->colA = (u8) m_Col_a;
+#ifdef RE4_PORT
+    unsigned int pt0 = sceKernelGetSystemTimeLow();
+#endif
     {
         static f32 DAMPING = 0.98f;
         c->calcSpeed(DAMPING);
     }
+#ifdef RE4_PORT
+    unsigned int pt1 = sceKernelGetSystemTimeLow();
+#endif
     c->move();
     c->calcNormal();
+#ifdef RE4_PORT
+    unsigned int pt2 = sceKernelGetSystemTimeLow();
+#endif
 
     wk->wind_time += wk->wind_time_plus;
     rand = wk->rand_ratio;
@@ -135,6 +148,15 @@ void cEsp4e::move()
             PSVECAdd(&c->pSpd[j + c->divH * i], &sp, &c->pSpd[j + c->divH * i]);
         }
     }
+#ifdef RE4_PORT
+    {
+        static int nTr;
+        unsigned int pt3 = sceKernelGetSystemTimeLow();
+        if (++nTr <= 12)
+            port_trace("[port] cEsp4e::move: cloth %dx%d: calcSpeed %u us, move+normal %u us, wind loop %u us (rand %g time_plus %d pow %d)\n",
+                       c->divH, c->divV, pt1 - pt0, pt2 - pt1, pt3 - pt2, rand, (int) wk->time_plus, (int) wk->pow);
+    }
+#endif
 }
 
 // Returns the Cloth to the pool when the effect dies.

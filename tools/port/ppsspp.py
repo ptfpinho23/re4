@@ -8,13 +8,15 @@ buttons, take screenshots, read the game's log. Needs the `websockets` package (
                         select l r) for 0.2 s;  hold BTN N;  down BTN / up BTN
       shot FILE.png     screenshot of the current frame
       analog X Y        left stick (-1..1)
+      waitlog RE SECS   run until the port's memory-stick log has a line matching RE
       where             every thread's PC as a function (build/port/re4.nm)
       peek SYM[+off] N  hex dump N bytes at a symbol (or hex address)
-      poke SYM[+off] HEX|text   write bytes;  break ADDR / watch ADDR N / waitbreak SECS / regs / cont
+      poke SYM[+off] HEX|text   write bytes;  break ADDR / unbreak ADDR / watch ADDR N / waitbreak SECS / regs / cont
       quit              stop the emulator (implied at the end)
-    -t: PPSSPPHeadless --timeout (default 600)   -j: JIT instead of the interpreter
-The emulator's log goes to --log (default build/port/headless.log); the game's stdout lines and
-faults are printed at the end, de-duplicated (RAW=1 in the environment prints everything).
+    -t: PPSSPPHeadless --timeout in emulated seconds (default 100000; the driver kills the emulator anyway)   -j: JIT instead of the interpreter
+The emulator's log goes to --log (default build/port/headless.log): the game's own output, or
+with FULLLOG=1 every HLE call too (it floods the debugger socket: expect dropped connections in
+heavy scenes); the game's lines and faults are printed at the end, de-duplicated (RAW=1: all).
 """
 import asyncio, base64, json, os, re, subprocess, sys, time
 from pathlib import Path
@@ -39,6 +41,9 @@ def install():
     ms.mkdir(parents=True, exist_ok=True)
     build = ROOT / "build/port"
     subprocess.run(["cp", str(build / "EBOOT.PBP"), str(EBOOT)], check=True)
+    # the port's log: the emulator does not honour PSP_O_TRUNC, so a shorter run would leave the
+    # previous run's tail in place
+    (ms / "port.log").unlink(missing_ok=True)
     data = ms / "data"
     if not data.exists() and (build / "data").is_dir():
         data.symlink_to(build / "data")
@@ -58,13 +63,24 @@ class Emu:
         """Send and wait for the reply with the same event name (or an error)."""
         await self.send(event, **kw)
         while True:
-            r = json.loads(await asyncio.wait_for(self.ws.recv(), 30))
+            try:
+                r = json.loads(await asyncio.wait_for(self.ws.recv(), 30))
+            except asyncio.TimeoutError:
+                print("no reply to %s within 30 s" % event)
+                return {"event": "error", "message": "timeout"}
             if r.get("event") == "cpu.stepping":
                 self.stopped = r  # a breakpoint hit while waiting for another reply
             if r.get("event") == event:
                 return r
             if r.get("event") == "error" and r.get("level", 0) <= 3:
                 return r
+
+    async def invalidate(self, addr):
+        """A breakpoint on code the JIT already compiled does not stop it (the block is not
+        recompiled); writing the instruction back to itself invalidates the block."""
+        r = await self.call("memory.read", address=addr & ~3, size=4)
+        if "base64" in r:
+            await self.call("memory.write", address=addr & ~3, base64=r["base64"])
 
     async def drain(self, secs):
         end = time.time() + secs
@@ -73,9 +89,15 @@ class Emu:
             if left <= 0:
                 return
             try:
-                await asyncio.wait_for(self.ws.recv(), left)
+                r = json.loads(await asyncio.wait_for(self.ws.recv(), left))
             except asyncio.TimeoutError:
                 return
+            except Exception:
+                return
+            if r.get("event") == "cpu.stepping":  # a break instruction / fault stops the CPU: say where
+                self.stopped = r
+                pc = r.get("pc", 0)
+                print("cpu stopped: %s at %08x %s" % (r.get("reason", "?"), pc, sym(pc)))
 
 
 async def run(cmds, timeout, jit, log):
@@ -88,7 +110,11 @@ async def run(cmds, timeout, jit, log):
         if os.environ.get("FULLLOG"):  # every emulator log line (HLE calls...): large, and it floods the debugger socket
             args.append("-l")
         args.append("-j" if jit else "-i")
-        args.append("--graphics=" + os.environ.get("PPSSPP_GRAPHICS", "software"))  # software: the frame is in VRAM for `shot`
+        g = os.environ.get("PPSSPP_GRAPHICS", "software")  # software: the frame is in VRAM for `shot`; "none": the emulator's default (no readback)
+        if g != "none":
+            args.append("--graphics=" + g)
+    if os.environ.get("GDB"):  # GDB=1: the emulator under gdb, backtraces of its faults in the log
+        args = ["gdb", "-q", "-batch", "-ex", "handle SIGSEGV stop print", "-ex", "run"] + sum([["-ex", "bt 14", "-ex", "c"] for _ in range(4)], []) + ["--args"] + args
     logf = open(log, "w")
     proc = subprocess.Popen(args, stdout=logf, stderr=subprocess.STDOUT)
     ws = None
@@ -109,11 +135,45 @@ async def run(cmds, timeout, jit, log):
         proc.kill()
         sys.exit("could not connect to the PPSSPP debugger")
     emu = Emu(ws)
+    try:
+        await drive(emu, ws, proc, cmds, log)
+    finally:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+        logf.close()
+        report(log)
+
+
+async def drive(emu, ws, proc, cmds, log):
     await emu.call("cpu.resume")
     i = 0
     while i < len(cmds):
         c = cmds[i]
         i += 1
+        if proc.poll() is not None:
+            print("emulator exited on its own: code %s (before %r)" % (proc.returncode, c))
+            break
+        try:
+            i = await step(emu, ws, cmds, i, c, log)
+        except websockets.exceptions.ConnectionClosed:
+            proc.wait(5)
+            print("emulator went away during %r: exit code %s" % (c, proc.returncode))
+            return
+    if proc.poll() is not None:
+        print("emulator exited on its own: code %s" % proc.returncode)
+    try:
+        await emu.send("cpu.stepping")
+        await ws.close()
+    except Exception:
+        pass
+
+
+async def step(emu, ws, cmds, i, c, log):
+    if True:
         if c == "wait":
             await emu.drain(float(cmds[i])); i += 1
         elif c == "press":
@@ -124,7 +184,9 @@ async def run(cmds, timeout, jit, log):
             await emu.drain(0.2)
         elif c == "hold":
             names = cmds[i].split(","); secs = float(cmds[i + 1]); i += 2
-            await emu.call("input.buttons.send", buttons={n: True for n in names})
+            r = await emu.call("input.buttons.send", buttons={n: True for n in names})
+            if r.get("event") == "error":
+                print("hold %s: %s" % (names, r.get("message")))
             await emu.drain(secs)
             await emu.call("input.buttons.send", buttons={n: False for n in names})
         elif c in ("down", "up"):  # down BTN[,BTN] / up BTN[,BTN]: press and hold / release
@@ -136,18 +198,32 @@ async def run(cmds, timeout, jit, log):
             await emu.call("input.analog.send", stick="left", x=x, y=y)
         elif c == "shot":
             path = cmds[i]; i += 1
+            if os.environ.get("PPSSPP_GRAPHICS", "software") != "software":
+                # a hardware backend: ask the GPU for the display buffer (a PNG data URI)
+                await emu.call("cpu.stepping")  # the GPU only answers while stepping
+                await emu.drain(0.3)
+                r = await emu.call("gpu.buffer.screenshot", type="uri", alpha=False)
+                await emu.call("cpu.resume")
+                uri = r.get("uri", "")
+                if "base64," in uri:
+                    open(path, "wb").write(base64.b64decode(uri.split("base64,", 1)[1]))
+                    print("screenshot -> %s" % path)
+                else:
+                    print("screenshot failed: %s" % json.dumps(r)[:300])
+                return i
             # The display buffer, read out of VRAM (the software renderer keeps it there; the
-            # hardware backends do not): the last sceDisplaySetFrameBuf in the HLE log names it.
-            fb = re.findall(r"sceDisplaySetFrameBuf\(([0-9a-f]+), (\d+), (\d+), \d+\)", open(log, errors="replace").read())
-            if not fb:
-                print("screenshot: no sceDisplaySetFrameBuf in the log yet")
-                continue
-            addr, stride, fmt = int(fb[-1][0], 16), int(fb[-1][1]), int(fb[-1][2])
-            bpp = 4 if fmt == 3 else 2
+            # hardware backends do not): port_gu.cpp's dispBuf holds its VRAM offset (8888, 512 wide).
+            r = await emu.call("memory.read", address=symaddr("_ZL7dispBuf"), size=4)
+            if "base64" not in r:
+                print("screenshot failed: %s" % json.dumps(r)[:200])
+                return i
+            addr = 0x44000000 + int.from_bytes(base64.b64decode(r["base64"]), "little")
+            stride, fmt = 512, 3
+            bpp = 4
             r = await emu.call("memory.read", address=addr, size=stride * 272 * bpp)
             if "base64" not in r:
                 print("screenshot failed: %s" % json.dumps(r)[:300])
-                continue
+                return i
             raw = base64.b64decode(r["base64"])
             from PIL import Image
             if fmt == 3:
@@ -184,7 +260,16 @@ async def run(cmds, timeout, jit, log):
         elif c == "break":  # break ADDR: a breakpoint (hex address or symbol[+off])
             addr = symaddr(cmds[i]); i += 1
             r = await emu.call("cpu.breakpoint.add", address=addr, enabled=True)
+            await emu.invalidate(addr)
             print("breakpoint at %08x: %s" % (addr, json.dumps(r)[:200]))
+        elif c == "breakif":  # breakif ADDR COND: a conditional breakpoint (COND in the emulator's expression syntax, e.g. "a0 == 0xdeadbeef")
+            addr, cond = symaddr(cmds[i]), cmds[i + 1]; i += 2
+            r = await emu.call("cpu.breakpoint.add", address=addr, enabled=True, condition=cond)
+            await emu.invalidate(addr)
+            print("breakpoint at %08x if %s: %s" % (addr, cond, json.dumps(r)[:200]))
+        elif c == "unbreak":  # unbreak ADDR: remove the breakpoint (a left-over one stops the CPU every frame)
+            addr = symaddr(cmds[i]); i += 1
+            await emu.call("cpu.breakpoint.remove", address=addr)
         elif c == "watch":  # watch ADDR SIZE: break on a write to the range
             addr, size = symaddr(cmds[i]), int(cmds[i + 1], 0); i += 2
             r = await emu.call("memory.breakpoint.add", address=addr, size=size, enabled=True, write=True, read=False, change=False)
@@ -206,6 +291,31 @@ async def run(cmds, timeout, jit, log):
                     break
                 if os.environ.get("DEBUG"):
                     print("event:", json.dumps(r)[:200])
+        elif c == "threads":  # every thread's registers (pc / ra / sp) and the top of its stack
+            await emu.call("cpu.stepping")
+            await emu.drain(0.3)
+            r = await emu.call("hle.thread.list")
+            for t in r.get("threads", []):
+                tid = t.get("id")
+                rr = await emu.call("cpu.getAllRegs", thread=tid)
+                g = {}
+                for cat in rr.get("categories", []):
+                    if cat.get("name") == "GPR":
+                        g = dict(zip(cat.get("registerNames", []), cat.get("uintValues", [])))
+                pc = rr.get("pc", t.get("pc", 0))
+                sp, ra = g.get("sp", 0), g.get("ra", 0)
+                print("thread %-12s %3d st=%-2s pc=%08x %-40s ra=%08x %s sp=%08x" % (t.get("name"), tid, t.get("status", "?"), pc, sym(pc), ra, sym(ra), sp))
+                if sp:
+                    m = await emu.call("memory.read", address=sp, size=1024)
+                    if "base64" in m:
+                        words = base64.b64decode(m["base64"])
+                        out = []
+                        for k in range(0, len(words), 4):
+                            v = int.from_bytes(words[k:k + 4], "little")
+                            if 0x08800000 <= v < 0x0a000000:
+                                out.append("%08x %s" % (v, sym(v)))
+                        for o in out:
+                            print("      stack: " + o)
         elif c == "regs":  # the CPU registers (while stopped)
             r = await emu.call("cpu.getAllRegs")
             if os.environ.get("DEBUG"):
@@ -220,25 +330,30 @@ async def run(cmds, timeout, jit, log):
                         REGS[nme] = v & 0xffffffff
                     out.append("%s=%08x%s" % (nme, v & 0xffffffff, ("(%s)" % fvals[k]) if fvals and k < len(fvals) and cat.get("name") == "FPU" else ""))
                 print(cat.get("name"), " ".join(out))
+        elif c == "waitlog":  # waitlog REGEX SECS: run until the port's log (port.log) has a matching line
+            pat, secs = re.compile(cmds[i]), float(cmds[i + 1]); i += 2
+            portlog = EBOOT.parent / "port.log"
+            end = time.time() + secs
+            found = False
+            while time.time() < end and not found:
+                await emu.drain(0.5)
+                try:
+                    found = any(pat.search(l) for l in open(portlog, errors="replace"))
+                except OSError:
+                    pass
+            print("waitlog %r: %s" % (cmds[i - 2], "matched" if found else "timed out"))
+        elif c == "stop":  # pause the CPU (regs / peek then, cont to resume)
+            await emu.call("cpu.stepping")
+            await emu.drain(0.3)
         elif c == "cont":
             emu.stopped = None
             await emu.call("cpu.resume")
         elif c == "quit":
-            break
+            return len(cmds)
         else:
             sys.exit("unknown command %r" % c)
-    try:
-        await emu.send("cpu.stepping")
-    except Exception:
-        pass
-    await ws.close()
-    proc.terminate()
-    try:
-        proc.wait(5)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-    logf.close()
-    report(log)
+    return i
+
 
 
 _syms = None
@@ -278,7 +393,8 @@ def symaddr(what):
     else:
         base = [a for a, n in symtab() if n == name]
         if not base:
-            sys.exit("no symbol %s" % name)
+            print("no symbol %s (build/port/re4.nm)" % name)
+            return 0
         base = base[0]
     return base + (int(off, 0) if off else 0)
 
@@ -287,25 +403,32 @@ def report(log):
     pat = re.compile(r"stdout|\[port\]|HALT|Exception|Illegal|Unmapped|MemoryException|breakpoint|Unimplemented|^E |^N |[Cc]rash")
     seen = {}
     lines = 0
-    for line in open(log, errors="replace"):
+    portlog = EBOOT.parent / "port.log"  # the port's own log on the memory stick (port_log.cpp)
+    sources = [open(log, errors="replace")]
+    if portlog.exists():
+        sources.append(open(portlog, errors="replace"))
+    for src in sources:
+      for line in src:
         lines += 1
         line = line.rstrip("\n")
         if os.environ.get("RAW"):
             print(line)
             continue
+        if src is not sources[0] and not line.startswith("["):
+            line = "stdout: " + line  # the port.log lines have no prefix: treat them like the game's output
         if not pat.search(line) or "ISO looks bogus" in line or "lang/.ini" in line:
             continue
-        line = re.sub(r"^I stdout: ", "", line)[:200]
+        line = re.sub(r"^(I )?stdout: ", "", line)[:200]
         key = re.sub(r"^\d+:[\d:.]+ +", "", line)
         if key not in seen:
             seen[key] = 1
             print(line)
-    print("--- full log: %s (%d lines)" % (log, lines))
+    print("--- full log: %s (%d lines); the port's log: %s" % (log, lines, portlog))
 
 
 def main():
     args = sys.argv[1:]
-    timeout, jit, log = 600, False, str(ROOT / "build/port/headless.log")
+    timeout, jit, log = 100000, False, str(ROOT / "build/port/headless.log")  # the emulator counts emulated seconds, which run ahead of the clock
     while args and args[0].startswith("-"):
         a = args.pop(0)
         if a == "-t":

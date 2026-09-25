@@ -30,6 +30,8 @@ struct PgVertex {
 #define PG_PSM_5551 1
 #define PG_PSM_4444 2
 #define PG_PSM_8888 3
+#define PG_PSM_T4 4      // 4-bit indexed, a 16-entry 8888 CLUT (texel 0 in the low nibble)
+#define PG_PSM_T8 5      // 8-bit indexed, a 256-entry 8888 CLUT
 #define PG_PSM_DXT1 8
 
 // texture functions (sceGu numbering)
@@ -77,7 +79,8 @@ void pg_cull(int enable, int frontCW);
 void pg_pixel_mask(unsigned int mask);
 void pg_fog(int enable, float nearz, float farz, unsigned int color);
 void pg_texture_off(void);
-void pg_texture(int psm, int w, int h, const void* data, int wrapS, int wrapT, int minFilt, int magFilt, int tfx, int tcc, float su, float sv);  // tcc 1: the texture alpha counts; su, sv scale the UVs
+// tcc 1: the texture alpha counts; su, sv scale the UVs; clut: the 8888 palette of a T4 / T8 texture
+void pg_texture(int psm, int w, int h, const void* data, int wrapS, int wrapT, int minFilt, int magFilt, int tfx, int tcc, float su, float sv, const unsigned int* clut, int clutEntries);
 void pg_projection(const float* m16);  // 16 floats, row-major (GameCube Mtx44)
 void pg_draw(int prim, int count, const PgVertex* verts);
 void* pg_get_memory(int bytes);

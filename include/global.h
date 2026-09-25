@@ -135,10 +135,17 @@ struct GlobalWork {
     u32 DblBufIdx;        // 0x24  double-buffer index into cModelInfo::pPosBuf/pNrmBuf (mirror)
     union {
         u16 RoomNo_next;     // 0x28  room id (stage << 8 | room) being entered (snd: room BGM / door tables)
+#ifndef RE4_PORT
         struct {
             u8 Stage_next; // 0x28  (sce_at sceAtFunc_door stores the door destination byte by byte)
             u8 Room_next;  // 0x29
         };
+#else
+        struct {           // little-endian: the halfword's high byte is the second one
+            u8 Room_next;
+            u8 Stage_next;
+        };
+#endif
     };
     u8 Part_next;         // 0x2A  spawn point in the next room (room_jmp CRoomInfo::setNextPos clears it)
     u8 pad_2B;
@@ -195,19 +202,33 @@ struct GlobalWork {
     u32 peseta;            // 0x4F98  money (ss_shop buy/sell, item pickups; PlSelect swaps it with peseta_bak)
     union {
         u16 room_id;       // 0x4F9C  stage << 8 | room as one halfword (obj14: room 004 test)
+#ifndef RE4_PORT
         struct {
             u8 stage_no;   // 0x4F9C
             u8 room_no;    // 0x4F9D
         };
+#else
+        struct {           // little-endian: the halfword's high byte is the second one
+            u8 room_no;
+            u8 stage_no;
+        };
+#endif
     };
     u8 Part;       // 0x4F9E  spawn point in the current room (copied to Part_old / next_point)
     u8 JumpPoint;  // 0x4F9F  room jump point (title/room_jmp debug jump; room scripts branch on 1/2)
     union {
         u16 room_id_prev;  // 0x4FA0  room_id of the previous room (room_jmp CRoomInfo::setNextPos)
+#ifndef RE4_PORT
         struct {
             u8 stage_prev; // 0x4FA0  stage the current room data was loaded for (stage.cpp)
             u8 room_prev;  // 0x4FA1
         };
+#else
+        struct {           // little-endian: the halfword's high byte is the second one
+            u8 room_prev;
+            u8 stage_prev;
+        };
+#endif
     };
     u8 Part_old;              // 0x4FA2  copy of x4F9E (room_jmp)
     s8 em_list_no;          // 0x4FA3  enemy list currently loaded (stage.cpp), -1 = none
@@ -293,7 +314,11 @@ struct SYSTEM_SAVE_WORK {
 extern SYSTEM_SAVE_WORK SystemSave;
 
 // stage_no/room_no read as one u16 (stage << 8 | room), as cRoomData::getRoomSavePtr wants it.
+#ifndef RE4_PORT
 #define G_ROOM_ID (*(u16*) &pG->stage_no)
+#else
+#define G_ROOM_ID (pG->room_id)  // stage_no is the halfword's second byte on the port (see the union)
+#endif
 
 // Flag helpers: `f |= b` / `f &= ~b` through a reference. Not an aliasing device: the pG reload after a
 // store is the compiler's own (docs/matching.md, "Compiler", mem-flags patch), and a plain `pG->x = v` is

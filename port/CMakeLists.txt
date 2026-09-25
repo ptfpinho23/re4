@@ -51,6 +51,7 @@ target_include_directories(re4_flags INTERFACE
 target_compile_definitions(re4_flags INTERFACE RE4_PORT=1 VERSION_G4BE08=1 BUILD_VERSION=0 NDEBUG=1)
 target_compile_options(re4_flags INTERFACE
     -O2 -G0 -funsigned-char -fno-strict-aliasing -fpermissive -w
+    -mno-check-zero-division  # the GameCube does not trap on integer division by zero either (the PSP build would `break`)
     $<$<COMPILE_LANGUAGE:CXX>:-std=gnu++14 -fno-exceptions -fno-rtti -fno-sized-deallocation>)
 
 function(re4_sources out)

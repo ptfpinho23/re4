@@ -3,6 +3,9 @@
 // set up the TEV stages of every material and submit the display lists.
 
 #include "atari.h"
+#ifdef RE4_PORT
+#include "port_psp.h"
+#endif
 #include "light.h"
 #include "ctrl.h"
 #include "global.h"
@@ -1139,6 +1142,23 @@ void commonModelTrans(cModel* m, cModelInfo* info, Mtx viewMat, int flag)
         }
         mat0 = m->mat;
         PSMTXConcat(viewMat, pm, mv);
+#ifdef RE4_PORT
+        {
+            static int nNan;
+            if (mv[0][0] != mv[0][0] && ++nNan <= 8) {
+                const f32* c[4] = {&viewMat[0][0], &m->mat[0][0], &info->mat[0][0], &m->pParts->mat[0][0]};
+                const char* nm[4] = {"view", "m->mat", "info->mat", "parts->mat"};
+                port_trace("[port] commonModelTrans NaN: model id %d type %d be_flag %08x -", m->id, m->type, (unsigned) m->be_flag);
+                for (int k = 0; k < 4; k++) {
+                    const f32* f = c[k];
+                    int bad = 0;
+                    for (int j = 0; j < 12; j++) if (f[j] != f[j]) bad = 1;
+                    if (bad) port_trace(" %s", nm[k]);
+                }
+                port_trace(" pos %g %g %g ang %g %g %g scale %g %g %g\n", m->pos.x, m->pos.y, m->pos.z, m->ang.x, m->ang.y, m->ang.z, m->scale.x, m->scale.y, m->scale.z);
+            }
+        }
+#endif
         PSMTXInverse(mv, inv);
         PSMTXTranspose(inv, nrm);
         GXLoadPosMtxImm(mv, 0);

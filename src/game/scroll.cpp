@@ -318,14 +318,14 @@ void smxInit(cObj* obj, SmxWork* w)
     mi = obj->pModelInfo;
     if (mi != NULL) {
         col = w->color;
-        *(u32*) mi->color = col;
+        *(u32*) mi->color = RGBA_BYTES(col);
         if ((col & ~0xFF) == 0) {
             mi->color[0] = 0xFF;
             mi->color[1] = 0xFF;
             mi->color[2] = 0xFF;
         }
         col = w->color2;
-        *(u32*) mi->color2 = col;
+        *(u32*) mi->color2 = RGBA_BYTES(col);
         if ((col & ~0xFF) == 0) {
             mi->color2[3] = 0;
         } else {
@@ -468,7 +468,7 @@ void cSmd::slide(int offset)
         // callee-saved allocation (base r28, constant r29).
         u32 base = (u32) this + BinTblOfs;
         for (i = 0; i < nBin; i++) {
-            addr = base + ((u32*) base)[i];
+            addr = base + FILE_U32(((u32*) base)[i]);
             if (GC_ADDR_BAD(addr)) {
                 pLog->err(0, 0, "cSmd::slide() PTR ERR %08X", addr);
                 return;
@@ -485,7 +485,7 @@ void cSmd::slide(int offset)
     }
     tbl = (u32*) ((u8*) this + TplTblOfs);
     for (i = 0; i < nTpl; i++) {
-        slideTplAddr((u8*) tbl + tbl[i], offset);
+        slideTplAddr((u8*) tbl + FILE_U32(tbl[i]), offset);
     }
 }
 
@@ -499,21 +499,21 @@ SmdWork* cSmd::getWorkPtr(int id)
 void* cSmd::getBinPtr(int id)
 {
     u8* tbl = (u8*) this + BinTblOfs;
-    return tbl + ((u32*) tbl)[id];
+    return tbl + FILE_U32(((u32*) tbl)[id]);
 }
 
 // Texture tpl `no`.
 void* cSmd::getTplPtr(int id)
 {
     u8* tbl = (u8*) this + TplTblOfs;
-    return tbl + ((u32*) tbl)[id];
+    return tbl + FILE_U32(((u32*) tbl)[id]);
 }
 
 // Motion `no`.
 void* cSmd::getMotPtr(int id)
 {
     u8* tbl = (u8*) this + MotTblOfs;
-    return tbl + ((u32*) tbl)[id];
+    return tbl + FILE_U32(((u32*) tbl)[id]);
 }
 
 // Works in the file including the group members.

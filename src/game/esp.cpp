@@ -5,6 +5,10 @@
 // tables by Tool_flg / Parts_no / Core_flg. Per-id create and trans functions live in
 // EspCreateTbl / EspTransTbl, filled by the esp??.cpp units through EspFuncTblSet.
 
+#ifdef RE4_PORT
+#include "port_psp.h"
+extern "C" unsigned int sceKernelGetSystemTimeLow(void);
+#endif
 #include "atari.h"
 #include "light.h"
 #include "global.h"
@@ -256,7 +260,18 @@ int EspMove()
                 continue;
             }
         }
+#ifdef RE4_PORT
+        {
+            unsigned int t0 = sceKernelGetSystemTimeLow();
+            esp->move();
+            unsigned int dt = sceKernelGetSystemTimeLow() - t0;
+            static int nSlow;
+            if (dt > 20000 && ++nSlow <= 20)
+                port_trace("[port] EspMove: effect %u (vtable %p, owner %d) took %u us\n", i, *(void**) esp, esp->info.owner, dt);
+        }
+#else
         esp->move();
+#endif
         if (esp->m_Be_flg & 1) {
             cnt++;
             if (pG->debug_mode == 0xE) {

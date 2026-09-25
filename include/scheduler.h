@@ -41,6 +41,9 @@ struct TASK {
     u8 pad_344[4];
 };                            // 0x348
 
+#ifdef RE4_PORT
+void port_isr_checkpoint(void);  // the background task waits here while the retrace holds it
+#endif
 extern TASK* CTASK_MAIN;  // sentinel "main thread" task (-1)
 extern TASK* pCTask;      // task currently being scheduled
 extern OSThread* pParentThread;  // thread to return to from the scheduler

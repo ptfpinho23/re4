@@ -17,6 +17,7 @@
 extern "C" void port_trace(const char* fmt, ...);  // port_log.cpp (the log, not the screen)
 #include "gx.h"
 #include <string.h>
+#include <stdint.h>
 #ifdef __PSP__
 #include <malloc.h>
 #define ALIGNED_ALLOC(n) memalign(16, n)
@@ -79,7 +80,8 @@ struct TlutPort {                // overlays the 12-byte GXTlutObj
     u32 pad;
 };
 static TexObjPort* texMap[8];
-static const TlutPort* tlutTable[20];
+static TlutPort tlutTable[20];    // GXLoadTlut copies the object: the game may build it on the stack
+static u8 tlutLoaded[20];
 
 struct TevStage {
     u8 coord, map, color, op;
@@ -213,8 +215,50 @@ struct TexCacheEntry {
     u8 fmt;
     u8 psm;
     void* converted;
+    u32* clut;         // the 8888 palette of a T4 / T8 conversion (16 or 256 entries), else NULL
+    u16 clutN;
     u32 lastUse;
+    u32 sig;           // sample hash of the source texels and palette (texSignature)
+    u32 gen;           // the invalidation generation the signature was checked against
 };
+static u32 texGeneration = 1;  // bumped by GXInvalidateTexAll: entries re-check their signature before use
+#define TEXCACHE_MAX 384
+static TexCacheEntry texCache[TEXCACHE_MAX];
+static u32 texUseClock;
+static u32 texCacheBytes;      // converted bytes held; the PSP's heap is small, so the cache keeps a budget
+extern "C" { unsigned int port_gx_stat_conversions, port_gx_stat_copies, port_gx_stat_dropped; }  // dropped: bad-vertex draws
+extern "C" { unsigned int port_gx_us_xform, port_gx_us_state; }  // microseconds per stats period: vertex parsing/transform, draw state (texture cache)
+#ifdef __PSP__
+extern "C" unsigned int sceKernelGetSystemTimeLow(void);  // (the SDK headers clash with the game's)
+static inline u32 usNow(void) { return sceKernelGetSystemTimeLow(); }
+#else
+static inline u32 usNow(void) { return 0; }
+#endif  // per frame, for port_gu's [ge] frame line
+#define TEXCACHE_BUDGET (5u << 20)
+extern "C" unsigned int port_gx_texcache_bytes(void) { return texCacheBytes; }
+// Bytes per texel of a GE pixel format, times 8 (T4 is half a byte).
+static u32 psmBits(u8 psm)
+{
+    switch (psm) {
+    case PG_PSM_T4: return 4;
+    case PG_PSM_T8: return 8;
+    case PG_PSM_5650: case PG_PSM_5551: case PG_PSM_4444: return 16;
+    default: return 32;
+    }
+}
+static u32 entryBytes(const TexCacheEntry* e)
+{
+    if (e->psm == PG_PSM_DXT1) return (u32) (e->pw / 4) * (e->ph / 4) * 8;
+    return ((u32) e->pw * e->ph * psmBits(e->psm)) / 8 + (e->clut ? e->clutN * 4u : 0u);
+}
+static void freeEntry(TexCacheEntry* e)
+{
+    texCacheBytes -= entryBytes(e);
+    free(e->converted);
+    e->converted = NULL;
+    if (e->clut) { free(e->clut); e->clut = NULL; }
+    e->clutN = 0;
+}
 
 static u32 pow2ceil(u32 v) { u32 p = 1; while (p < v) p <<= 1; return p; }
 
@@ -241,11 +285,36 @@ static void decodeDxt1Block(const u8* b, u32* out, int stride, int bw, int bh)
     }
 }
 
+// Expands a converted texture to 8888 (the palette or the 16-bit fields), for the downscale.
+static u32* expandTo8888(const void* conv, u8 psm, const u32* clut, int w, int h)
+{
+    u32* out = (u32*) ALIGNED_ALLOC((u32) w * h * 4);
+    if (!out) return NULL;
+    const u8* p = (const u8*) conv;
+    for (int i = 0; i < w * h; i++) {
+        u32 c;
+        switch (psm) {
+        case PG_PSM_T4: { u32 idx = (p[i >> 1] >> ((i & 1) * 4)) & 15; c = clut ? clut[idx] : 0; break; }
+        case PG_PSM_T8: c = clut ? clut[p[i]] : 0; break;
+        case PG_PSM_5650: { u32 v = p[i * 2] | (p[i * 2 + 1] << 8), r = v & 31, g = (v >> 5) & 63, b = v >> 11;
+            c = 0xFF000000u | ((b << 3 | b >> 2) << 16) | ((g << 2 | g >> 4) << 8) | (r << 3 | r >> 2); break; }
+        case PG_PSM_5551: { u32 v = p[i * 2] | (p[i * 2 + 1] << 8), r = v & 31, g = (v >> 5) & 31, b = (v >> 10) & 31, a = v >> 15;
+            c = ((a ? 255u : 0u) << 24) | ((b << 3 | b >> 2) << 16) | ((g << 3 | g >> 2) << 8) | (r << 3 | r >> 2); break; }
+        case PG_PSM_4444: { u32 v = p[i * 2] | (p[i * 2 + 1] << 8), r = v & 15, g = (v >> 4) & 15, b = (v >> 8) & 15, a = v >> 12;
+            c = ((a * 17) << 24) | ((b * 17) << 16) | ((g * 17) << 8) | (r * 17); break; }
+        default: c = ((const u32*) p)[i]; break;
+        }
+        out[i] = c;
+    }
+    return out;
+}
+
 // The GE takes power-of-two textures up to 512 x 512. Pads the converted image to the next power
 // of two (edge texels replicated, so clamping samples the image's edge) and box-filters oversize
-// ones down by a power of two; CMPR is padded as blocks, or decoded first when it is oversize.
-// Returns the buffer to bind (conv itself when it already fits), its size and the UV scale.
-static void* fitTexture(void* conv, u8* psm, int w, int h, u16* pw, u16* ph, f32* su, f32* sv)
+// ones down by a power of two (as 8888: the palette goes); CMPR is padded as blocks, or decoded
+// first when it is oversize. Returns the buffer to bind (conv itself when it already fits), its
+// size and the UV scale.
+static void* fitTexture(void* conv, u8* psm, u32** clut, int w, int h, u16* pw, u16* ph, f32* su, f32* sv)
 {
     u32 tw = pow2ceil((u32) w), th = pow2ceil((u32) h);
     if (tw < 8) tw = 8;
@@ -271,8 +340,61 @@ static void* fitTexture(void* conv, u8* psm, int w, int h, u16* pw, u16* ph, f32
         *pw = (u16) tw; *ph = (u16) th;
         return out;
     }
-    u32* src = (u32*) conv;
-    if (*psm == PG_PSM_DXT1) {  // oversize CMPR: decode, then treat as 8888
+    if (fx == 1 && fy == 1 && *psm != PG_PSM_DXT1) {  // padding only, in the format's own texel size
+        u32 bits = psmBits(*psm);
+        u32 rowBytes = (tw * bits) / 8, srcRow = ((u32) w * bits) / 8;
+        u8* out = (u8*) ALIGNED_ALLOC(rowBytes * th);
+        if (!out) return conv;
+        const u8* src = (const u8*) conv;
+        for (u32 y = 0; y < th; y++) {
+            const u8* s = src + ((y < (u32) h ? y : (u32) h - 1) * srcRow);
+            u8* d = out + y * rowBytes;
+            memcpy(d, s, srcRow);
+            if (bits >= 8) {  // replicate the last texel across the padding
+                u32 tb = bits / 8;
+                for (u32 x = (u32) w; x < tw; x++) memcpy(d + x * tb, s + ((u32) w - 1) * tb, tb);
+            } else {          // T4: nibbles
+                u32 last = (s[((u32) w - 1) >> 1] >> ((((u32) w - 1) & 1) * 4)) & 15;
+                for (u32 x = (u32) w; x < tw; x++) {
+                    u8* b = d + (x >> 1);
+                    if (x & 1) *b = (u8) ((*b & 0x0F) | (last << 4)); else *b = (u8) ((*b & 0xF0) | last);
+                }
+            }
+        }
+        free(conv);
+        *pw = (u16) tw; *ph = (u16) th;
+        return out;
+    }
+    if (*psm != PG_PSM_DXT1 && *psm != PG_PSM_8888) {
+        // oversize in a compact format: keep it compact, halved by dropping texels (the fonts and
+        // UI sheets this concerns are read one cell at a time; a box filter would cost 32 bits)
+        u32 bits = psmBits(*psm);
+        u32 ow = tw / fx, oh = th / fy;
+        u32 rowBytes = (ow * bits) / 8;
+        u8* out = (u8*) ALIGNED_ALLOC(rowBytes * oh);
+        if (!out) return conv;
+        const u8* sp = (const u8*) conv;
+        u32 srcRow = ((u32) w * bits) / 8;
+        for (u32 y = 0; y < oh; y++) {
+            u32 sy = y * fy; if (sy >= (u32) h) sy = (u32) h - 1;
+            u8* d = out + y * rowBytes;
+            const u8* sr = sp + sy * srcRow;
+            for (u32 x = 0; x < ow; x++) {
+                u32 sx = x * fx; if (sx >= (u32) w) sx = (u32) w - 1;
+                switch (bits) {
+                case 4: { u32 v = (sr[sx >> 1] >> ((sx & 1) * 4)) & 15; u8* b = d + (x >> 1); if (x & 1) *b = (u8) ((*b & 0x0F) | (v << 4)); else *b = (u8) ((*b & 0xF0) | v); break; }
+                case 8: d[x] = sr[sx]; break;
+                default: ((u16*) d)[x] = ((const u16*) sr)[sx]; break;
+                }
+            }
+        }
+        free(conv);
+        *pw = (u16) ow; *ph = (u16) oh;
+        return out;
+    }
+    // oversize 8888 / CMPR: to 8888 first, then a box filter into the padded power-of-two size
+    u32* src;
+    if (*psm == PG_PSM_DXT1) {
         int bw = (w + 3) / 4, bh = (h + 3) / 4;
         u32* dec = (u32*) ALIGNED_ALLOC(bw * 4 * bh * 4 * 4);
         if (!dec) return conv;
@@ -282,8 +404,15 @@ static void* fitTexture(void* conv, u8* psm, int w, int h, u16* pw, u16* ph, f32
         free(conv);
         src = dec;
         w = bw * 4; h = bh * 4;  // the decoded image is block-aligned; the scale stays the caller's
-        *psm = PG_PSM_8888;
+    } else if (*psm != PG_PSM_8888) {
+        src = expandTo8888(conv, *psm, *clut, w, h);
+        free(conv);
+        if (*clut) { free(*clut); *clut = NULL; }
+        if (!src) return NULL;
+    } else {
+        src = (u32*) conv;
     }
+    *psm = PG_PSM_8888;
     int ow = (int) (tw / fx), oh = (int) (th / fy);
     u32* out = (u32*) ALIGNED_ALLOC(ow * oh * 4);
     if (!out) { *pw = (u16) w; *ph = (u16) h; *su = *sv = 1.0f; return src; }
@@ -311,9 +440,6 @@ static void* fitTexture(void* conv, u8* psm, int w, int h, u16* pw, u16* ph, f32
     *pw = (u16) ow; *ph = (u16) oh;
     return out;
 }
-#define TEXCACHE_MAX 384
-static TexCacheEntry texCache[TEXCACHE_MAX];
-static u32 texUseClock;
 
 static u32 tlutColor(const u8* lut, int fmt, int index)
 {
@@ -338,11 +464,16 @@ static u32 tlutColor(const u8* lut, int fmt, int index)
     }
 }
 
-// Decodes a GameCube texture into 32-bit ABGR (the GE's 8888) or, for CMPR, into GE DXT1.
-static void* convertTexture(const TexObjPort* t, const TlutPort* tlut, u8* psmOut)
+// Decodes a GameCube texture for the GE: CMPR is re-blocked as DXT1, the intensity and palette
+// formats become 4 / 8-bit indexed textures with an 8888 CLUT (exact, and a quarter of the memory
+// of the 32-bit form the PSP cannot afford), RGB565 becomes 5650, RGB5A3 5551 (opaque) or 4444,
+// and IA8 / RGBA8 / C14X2 stay 32-bit ABGR.
+static void* convertTexture(const TexObjPort* t, const TlutPort* tlut, u8* psmOut, u32** clutOut, u16* clutN)
 {
     int w = t->width, h = t->height, fmt = t->format;
     const u8* src = (const u8*) t->data;
+    *clutOut = NULL;
+    *clutN = 0;
     if (fmt == 14) {  // CMPR: 8x8 tiles of four 4x4 DXT1 blocks -> GE DXT1 (indices then colours)
         *psmOut = PG_PSM_DXT1;
         int bw = (w + 3) / 4, bh = (h + 3) / 4;
@@ -366,48 +497,135 @@ static void* convertTexture(const TexObjPort* t, const TlutPort* tlut, u8* psmOu
         }
         return out;
     }
-    *psmOut = PG_PSM_8888;
-    u32* out = (u32*) ALIGNED_ALLOC(w * h * 4);
-    if (!out) return NULL;
+    const u8* lut = tlut ? (const u8*) tlut->lut : NULL;
+    int lutFmt = tlut ? tlut->fmt : 2;
+    // the output kind and, for the indexed kinds, the palette
+    u8 psm;
+    u32* clut = NULL;
+    int n = 0;
+    switch (fmt) {
+    case 0: psm = PG_PSM_T4; n = 16; break;                     // I4: grey ramp, A = I
+    case 1: case 2: psm = PG_PSM_T8; n = 256; break;             // I8, IA4
+    case 4: psm = PG_PSM_5650; break;                            // RGB565
+    case 5: {                                                    // RGB5A3: 5551 when every texel is opaque, else 8888 (exact)
+        psm = PG_PSM_5551;
+        int tiles = ((w + 3) / 4) * ((h + 3) / 4);
+        for (int i = 0; i < tiles * 16 && psm == PG_PSM_5551; i++) if (!(src[i * 2] & 0x80)) psm = PG_PSM_8888;
+        break;
+    }
+    case 8: psm = PG_PSM_T4; n = 16; break;                      // C4
+    case 9: psm = PG_PSM_T8; n = 256; break;                     // C8
+    default: psm = PG_PSM_8888; break;                           // IA8, RGBA8, C14X2
+    }
+    if (n) {
+        clut = (u32*) ALIGNED_ALLOC(n * 4);
+        if (!clut) return NULL;
+        for (int i = 0; i < n; i++) {
+            u32 c;
+            if (fmt == 0) { u32 v = (u32) i * 17; c = (v << 24) | (v << 16) | (v << 8) | v; }
+            else if (fmt == 1) { u32 v = (u32) i; c = (v << 24) | (v << 16) | (v << 8) | v; }
+            else if (fmt == 2) { u32 a = (u32) (i >> 4) * 17, l = (u32) (i & 15) * 17; c = (a << 24) | (l << 16) | (l << 8) | l; }
+            else c = lut ? tlutColor(lut, lutFmt, i) : 0xFF000000u;
+            clut[i] = c;
+        }
+    }
+    u32 bits = psmBits(psm);
+    u32 bytes = ((u32) w * h * bits + 7) / 8;
+    u8* out = (u8*) ALIGNED_ALLOC(bytes);
+    if (!out) { if (clut) free(clut); return NULL; }
+    memset(out, 0, bytes);
     int tw = 4, th = 4;  // tile size
     switch (fmt) {
     case 0: case 8: tw = 8; th = 8; break;              // I4, C4
     case 1: case 2: case 9: tw = 8; th = 4; break;      // I8, IA4, C8
     default: break;                                     // IA8, RGB565, RGB5A3, RGBA8, C14X2
     }
-    const u8* lut = tlut ? (const u8*) tlut->lut : NULL;
-    int lutFmt = tlut ? tlut->fmt : 2;
     for (int ty = 0; ty < (h + th - 1) / th; ty++) {
         for (int tx = 0; tx < (w + tw - 1) / tw; tx++) {
             for (int y = 0; y < th; y++) {
                 for (int x = 0; x < tw; x++) {
                     int px = tx * tw + x, py = ty * th + y;
                     int i = y * tw + x;
-                    u32 c = 0;
+                    if (px >= w || py >= h) continue;
+                    u32 o = (u32) py * w + px;
                     switch (fmt) {
-                    case 0: { u8 v = src[i >> 1]; v = (i & 1) ? (v & 15) : (v >> 4); v *= 17; c = 0xFF000000u | v << 16 | v << 8 | v; break; }
-                    case 1: { u8 v = src[i]; c = 0xFF000000u | v << 16 | v << 8 | v; break; }
-                    case 2: { u8 v = src[i]; u8 a = (v >> 4) * 17, l = (v & 15) * 17; c = (u32) a << 24 | l << 16 | l << 8 | l; break; }
-                    case 3: { u8 a = src[i * 2], l = src[i * 2 + 1]; c = (u32) a << 24 | l << 16 | l << 8 | l; break; }
-                    case 4: c = tlutColor(src, 1, i); break;
-                    case 5: c = tlutColor(src, 2, i); break;
-                    case 6: { u8 a = src[i * 2], r = src[i * 2 + 1], g = src[32 + i * 2], b = src[32 + i * 2 + 1]; c = (u32) a << 24 | b << 16 | g << 8 | r; break; }
-                    case 8: { u8 v = src[i >> 1]; v = (i & 1) ? (v & 15) : (v >> 4); c = lut ? tlutColor(lut, lutFmt, v) : 0xFF000000u; break; }
-                    case 9: c = lut ? tlutColor(lut, lutFmt, src[i]) : 0xFF000000u; break;
-                    case 10: c = lut ? tlutColor(lut, lutFmt, be16(src + i * 2) & 0x3FFF) : 0xFF000000u; break;
-                    default: c = 0xFFFF00FF; break;
+                    case 0: case 8: {  // 4-bit index (I4 grey level or C4 palette index), texel 0 in the high nibble
+                        u8 v = src[i >> 1]; v = (i & 1) ? (v & 15) : (v >> 4);
+                        u8* b = out + (o >> 1);
+                        if (o & 1) *b = (u8) ((*b & 0x0F) | (v << 4)); else *b = (u8) ((*b & 0xF0) | v);
+                        break;
                     }
-                    if (px < w && py < h) out[py * w + px] = c;
+                    case 1: case 2: case 9: out[o] = src[i]; break;  // I8 level / IA4 byte / C8 index
+                    case 3: { u8 a = src[i * 2], l = src[i * 2 + 1]; ((u32*) out)[o] = (u32) a << 24 | l << 16 | l << 8 | l; break; }
+                    case 4: { u16 v = be16(src + i * 2); u32 r = (v >> 11) & 31, g = (v >> 5) & 63, b = v & 31;
+                        ((u16*) out)[o] = (u16) (r | (g << 5) | (b << 11)); break; }
+                    case 5: {
+                        u16 v = be16(src + i * 2);
+                        if (psm == PG_PSM_5551) { u32 r = (v >> 10) & 31, g = (v >> 5) & 31, b = v & 31; ((u16*) out)[o] = (u16) (r | (g << 5) | (b << 10) | 0x8000); }
+                        else ((u32*) out)[o] = tlutColor(src + i * 2, 2, 0);  // the 8888 decode of one RGB5A3 texel
+                        break;
+                    }
+                    case 6: { u8 a = src[i * 2], r = src[i * 2 + 1], g = src[32 + i * 2], b = src[32 + i * 2 + 1]; ((u32*) out)[o] = (u32) a << 24 | b << 16 | g << 8 | r; break; }
+                    case 10: ((u32*) out)[o] = lut ? tlutColor(lut, lutFmt, be16(src + i * 2) & 0x3FFF) : 0xFF000000u; break;
+                    default: ((u32*) out)[o] = 0xFFFF00FF; break;
+                    }
                 }
             }
             src += (fmt == 0 || fmt == 8) ? 32 : (fmt == 1 || fmt == 2 || fmt == 9) ? 32 : (fmt == 6) ? 64 : 32;
         }
     }
+    *psmOut = psm;
+    *clutOut = clut;
+    *clutN = (u16) n;
     return out;
+}
+
+static u32 texBytes(const TexObjPort* t)
+{
+    u32 w = t->width, h = t->height;
+    switch (t->format) {
+    case 0: case 8: return ((w + 7) / 8) * ((h + 7) / 8) * 32;             // I4, C4
+    case 1: case 2: case 9: return ((w + 7) / 8) * ((h + 3) / 4) * 32;     // I8, IA4, C8
+    case 6: return ((w + 3) / 4) * ((h + 3) / 4) * 64;                     // RGBA8
+    case 14: return ((w + 7) / 8) * ((h + 7) / 8) * 32;                    // CMPR
+    default: return ((w + 3) / 4) * ((h + 3) / 4) * 32;                    // IA8, RGB565, RGB5A3, C14X2
+    }
+}
+
+// A cheap signature of a texture's contents: 64 samples spread over the texels plus the palette.
+// The game invalidates the whole texture cache (GXInvalidateTexAll) far more often than it changes
+// texture memory, so the cache keeps its conversions and re-checks this instead of reconverting.
+static u32 texSignature(const TexObjPort* t, const TlutPort* tlut)
+{
+    u32 h = 2166136261u;
+    const u8* d = (const u8*) t->data;
+    u32 n = texBytes(t);
+    if (d && n) {
+        u32 step = n / 64;
+        if (step < 4) step = 4;
+        for (u32 i = 0; i < n; i += step) h = (h ^ *(const u32*) (d + (i & ~3u))) * 16777619u;
+    }
+    if (tlut && tlut->lut) {
+        const u8* l = (const u8*) tlut->lut;
+        u32 m = (u32) tlut->entries * 2;
+        for (u32 i = 0; i < m; i += 4) h = (h ^ *(const u32*) (l + i)) * 16777619u;
+    }
+    return h;
 }
 
 static TexCacheEntry* cachedTexture(const TexObjPort* t)
 {
+#ifdef __PSP__
+    u32 addr = (u32) (uintptr_t) t->data & 0x1FFFFFFF;
+    int badAddr = addr < 0x08400000 || addr >= 0x0C000000;
+#else
+    int badAddr = t->data == NULL;
+#endif
+    if (t->width == 0 || t->height == 0 || t->width > 1024 || t->height > 1024 || t->format > 14 || badAddr) {
+        static u32 nb;  // a texture object that was never initialised, or file data the loader did not relocate
+        if (++nb <= 20) port_trace("[gx] bad texture object: data %p %ux%u fmt %d\n", t->data, t->width, t->height, t->format);
+        return NULL;
+    }
     for (int i = 0; i < COPY_MAX; i++) {
         if (copies[i].buf && copies[i].dest == t->data) {
             static TexCacheEntry copyEntry;
@@ -416,37 +634,95 @@ static TexCacheEntry* cachedTexture(const TexObjPort* t)
             copyEntry.su = copyEntry.sv = 1.0f;
             copyEntry.fmt = t->format; copyEntry.psm = PG_PSM_8888;
             copyEntry.converted = copies[i].buf;
+            copyEntry.clut = NULL; copyEntry.clutN = 0;
             return &copyEntry;
         }
     }
-    const TlutPort* tlut = (t->isCI && t->tlutName < 20) ? tlutTable[t->tlutName] : NULL;
+    const TlutPort* tlut = (t->isCI && t->tlutName < 20 && tlutLoaded[t->tlutName]) ? &tlutTable[t->tlutName] : NULL;
     const void* lutPtr = tlut ? tlut->lut : NULL;
     TexCacheEntry* victim = NULL;
     for (int i = 0; i < TEXCACHE_MAX; i++) {
         TexCacheEntry* e = &texCache[i];
         if (e->converted && e->data == t->data && e->tlut == lutPtr && e->w == t->width && e->h == t->height && e->fmt == t->format) {
+            if (e->gen != texGeneration) {  // invalidated since: still the same texels?
+                u32 sig = texSignature(t, tlut);
+                if (sig != e->sig) {
+                    { static u32 nr; if (++nr <= 8 || (nr & 127) == 0) port_trace("[gx] miss %u: %p %ux%u fmt %d tlut %p changed (signature %08x -> %08x)\n", nr, t->data, t->width, t->height, t->format, lutPtr, e->sig, sig); }
+                    freeEntry(e);
+                    victim = e;
+                    break;
+                }
+                e->gen = texGeneration;
+            }
             e->lastUse = ++texUseClock;
             return e;
         }
         if (!e->converted) {
-            if (!victim) victim = e;
+            if (!victim || victim->converted) victim = e;  // a free slot beats any eviction
         } else if (!victim || (victim->converted && e->lastUse < victim->lastUse)) {
-            if (!victim || victim->converted) victim = e;
+            victim = e;                                   // else the least recently used
         }
     }
     if (!victim) victim = &texCache[0];
-    if (victim->converted) {
-        free(victim->converted);
-        victim->converted = NULL;
+    {
+        static u32 nm;
+        int show = ++nm <= 8 || (nm & 127) == 0;
+        if (show && !victim->converted) {
+            int same = -1, used = 0;
+            for (int i = 0; i < TEXCACHE_MAX; i++) {
+                if (texCache[i].converted) used++;
+                if (texCache[i].converted && texCache[i].data == t->data && same < 0) same = i;
+            }
+            if (same >= 0) {
+                const TexCacheEntry* e = &texCache[same];
+                port_trace("[gx] miss %u: %p %ux%u fmt %d tlut %p: an entry with that data exists (tlut %p %ux%u fmt %d), %d used\n", nm, t->data, t->width, t->height, t->format, lutPtr, e->tlut, e->w, e->h, e->fmt, used);
+            } else {
+                port_trace("[gx] miss %u: %p %ux%u fmt %d tlut %p: new (%d used)\n", nm, t->data, t->width, t->height, t->format, lutPtr, used);
+            }
+        } else if (show && victim->converted) {
+            port_trace("[gx] miss %u: %p %ux%u fmt %d: evicting %p %ux%u (cache %u KB)\n", nm, t->data, t->width, t->height, t->format, victim->data, victim->w, victim->h, texCacheBytes / 1024);
+        }
+    }
+    if (victim->converted) freeEntry(victim);
+    // the budget: evict the least recently used conversions until the new one fits (the size the
+    // conversion will have: indexed, 16-bit, DXT1 or 32-bit by format)
+    u32 needBits = (t->format == 0 || t->format == 8) ? 4 : (t->format == 1 || t->format == 2 || t->format == 9) ? 8
+                 : (t->format == 4 || t->format == 5) ? 16 : t->format == 14 ? 4 : 32;
+    for (u32 need = ((u32) t->width * t->height * needBits) / 8 + 1024; texCacheBytes + need > TEXCACHE_BUDGET;) {
+        TexCacheEntry* old = NULL;
+        for (int i = 0; i < TEXCACHE_MAX; i++) {
+            TexCacheEntry* e = &texCache[i];
+            if (e->converted && (!old || e->lastUse < old->lastUse)) old = e;
+        }
+        if (!old) break;
+        freeEntry(old);
     }
     u8 psm = PG_PSM_8888;
-    void* conv = convertTexture(t, tlut, &psm);
-    if (!conv) return NULL;
+    u32* clut = NULL;
+    u16 clutN = 0;
+    void* conv = convertTexture(t, tlut, &psm, &clut, &clutN);
+    if (!conv) {
+        static int nf;
+        if (++nf <= 10) port_trace("[gx] texture %ux%u fmt %d: no memory for the conversion\n", t->width, t->height, t->format);
+        return NULL;
+    }
+    port_gx_stat_conversions++;
+    {
+        static u32 nConv;
+        nConv++;
+        if (nConv <= 64 || (nConv & 63) == 0) {  // the first ones, then every 64th: a cache that thrashes shows here
+            port_trace("[gx] texture %u: %p %ux%u fmt %d tlut %p -> psm %d, %u KB cached\n", nConv, t->data, t->width, t->height, t->format, lutPtr, psm, texCacheBytes / 1024);
+        }
+    }
     u16 pw, ph;
     f32 su, sv;
-    conv = fitTexture(conv, &psm, t->width, t->height, &pw, &ph, &su, &sv);
-    pg_dcache_writeback(conv, psm == PG_PSM_DXT1 ? (pw / 4) * (ph / 4) * 8 : pw * ph * 4);
+    conv = fitTexture(conv, &psm, &clut, t->width, t->height, &pw, &ph, &su, &sv);
+    if (!conv) { if (clut) free(clut); return NULL; }
+    if (psm == PG_PSM_DXT1) clut = NULL;
+    pg_dcache_writeback(conv, psm == PG_PSM_DXT1 ? (pw / 4) * (ph / 4) * 8 : (pw * ph * psmBits(psm)) / 8);
+    if (clut) pg_dcache_writeback(clut, clutN * 4);
     victim->pw = pw; victim->ph = ph; victim->su = su; victim->sv = sv;
+    victim->clut = clut; victim->clutN = clut ? clutN : 0;
     victim->data = t->data;
     victim->tlut = lutPtr;
     victim->w = t->width;
@@ -454,17 +730,22 @@ static TexCacheEntry* cachedTexture(const TexObjPort* t)
     victim->fmt = t->format;
     victim->psm = psm;
     victim->converted = conv;
+    texCacheBytes += entryBytes(victim);
     victim->lastUse = ++texUseClock;
+    victim->sig = texSignature(t, tlut);
+    victim->gen = texGeneration;
     return victim;
 }
 
 static void invalidateTextures(void)
 {
+    texGeneration++;  // the entries re-check their source signature when next bound
+}
+
+static void freeTextures(void)
+{
     for (int i = 0; i < TEXCACHE_MAX; i++) {
-        if (texCache[i].converted) {
-            free(texCache[i].converted);
-            texCache[i].converted = NULL;
-        }
+        if (texCache[i].converted) freeEntry(&texCache[i]);
     }
 }
 
@@ -500,7 +781,14 @@ static int constInput(u8 v, u32* color)
     return 0;
 }
 
+static void applyDrawStateImpl(int hasVertexColor);
 static void applyDrawState(int hasVertexColor)
+{
+    u32 t0 = usNow();
+    applyDrawStateImpl(hasVertexColor);
+    port_gx_us_state += usNow() - t0;
+}
+static void applyDrawStateImpl(int hasVertexColor)
 {
     drawConstColorOn = 0;
     int si = textureStage();
@@ -545,7 +833,7 @@ static void applyDrawState(int hasVertexColor)
     if (st->op == 1) tfx = PG_TFX_DECAL;         // GX_DECAL through GXSetTevOp
     int tcc = inputsMention(st->ain, 4) ? 1 : 0;  // the texture alpha counts only when the alpha combiner reads it
     pg_texture(e->psm, e->pw, e->ph, e->converted, t->wrapS == 0 ? 1 : 0, t->wrapT == 0 ? 1 : 0,
-               t->minFilt == 0 ? 0 : 1, t->magFilt == 0 ? 0 : 1, tfx, tcc, e->su, e->sv);
+               t->minFilt == 0 ? 0 : 1, t->magFilt == 0 ? 0 : 1, tfx, tcc, e->su, e->sv, e->clut, e->clutN);
 }
 
 // ---------------------------------------------------------------- vertex parsing
@@ -703,14 +991,22 @@ static void genTexCoord(const TexGen* g, u32 mtxId, const f32* pos, const f32* n
 }
 
 // Parses `count` vertices of vertex format `vf` from the stream and draws them as `prim`.
+static const u8* drawVerticesImpl(Parser* s, int prim, int vf, u32 count);
 static const u8* drawVertices(Parser* s, int prim, int vf, u32 count)
+{
+    u32 t0 = usNow();
+    const u8* r = drawVerticesImpl(s, prim, vf, count);
+    port_gx_us_xform += usNow() - t0;
+    return r;
+}
+static const u8* drawVerticesImpl(Parser* s, int prim, int vf, u32 count)
 {
     if (vf > 7 || count == 0) return s->p;
     const Vat* f = &vat[vf];
     int quads = prim == 0;
     u32 outCount = quads ? count / 4 * 6 : count;
     PgVertex* out = (PgVertex*) pg_get_memory(outCount * sizeof(PgVertex));
-    if (!out) return s->p;
+    int discard = out == NULL;  // no room this frame: the stream is still parsed (the caller continues after it)
     int hasColor = vcd[A_CLR0] != 0;
     u32 defColor = defaultColor();
     int ch = rasChannel();
@@ -798,6 +1094,7 @@ static const u8* drawVertices(Parser* s, int prim, int vf, u32 count)
             f32 pos[3] = {px, py, pz}, nrm[3] = {nx, ny, nz};
             genTexCoord(&texGen[0], texMtx0, pos, nrm, v.u, v.v, &v.u, &v.v);
         }
+        if (discard) continue;
         if (quads) {
             u32 q = n & 3;
             static PgVertex quad[4];
@@ -811,7 +1108,27 @@ static const u8* drawVertices(Parser* s, int prim, int vf, u32 count)
         }
     }
     (void) hasColor;
+    if (discard) return s->p;
     if (cullMode == 3) return s->p;  // GX_CULL_ALL
+    {
+        // Non-finite or absurd coordinates (unconverted data, a bad matrix) would stall the
+        // rasteriser (the emulator's software renderer walks the whole triangle): drop the draw.
+        int bad = 0;
+        for (u32 i = 0; i < o && !bad; i++) {
+            f32 x = out[i].x, y = out[i].y, z = out[i].z;
+            if (!(x == x) || !(y == y) || !(z == z) || x > 1e7f || x < -1e7f || y > 1e7f || y < -1e7f || z > 1e7f || z < -1e7f) bad = 1;
+        }
+        if (bad) {
+            static u32 nBad;
+            port_gx_stat_dropped++;
+            if (++nBad <= 20) {
+                port_trace("[gx] draw with non-finite / huge vertices dropped: prim %d vf %d count %u be %d mtx %d v0 %g %g %g\n", prim, vf, count, s->bigEndian, currentMtx, out[0].x, out[0].y, out[0].z);
+                port_trace("[gx]   mtx %g %g %g %g / %g %g %g %g / %g %g %g %g  proj %g %g %g %g %g %g ortho %d\n", curMtx[0], curMtx[1], curMtx[2], curMtx[3], curMtx[4], curMtx[5], curMtx[6], curMtx[7], curMtx[8], curMtx[9], curMtx[10], curMtx[11],
+                           projection[0][0], projection[0][2], projection[1][1], projection[1][2], projection[2][2], projection[2][3], projType);
+            }
+            return s->p;
+        }
+    }
     applyDrawState(hasColor);
     if (drawConstColorOn) {
         for (u32 i = 0; i < o; i++) out[i].color = (out[i].color & 0xFF000000u) | (drawConstColor & 0x00FFFFFFu);
@@ -1034,6 +1351,13 @@ void GXGetProjectionv(f32* p)
 void GXLoadPosMtxImm(const f32 mtx[3][4], u32 id)
 {
     if (id + 2 < 64) memcpy(&mtxMem[id][0], mtx, 12 * sizeof(f32));
+    {
+        static u32 nNan;
+        const f32* m = &mtx[0][0];
+        int bad = 0;
+        for (int i = 0; i < 12; i++) if (!(m[i] == m[i])) bad = 1;
+        if (bad && ++nNan <= 8) port_trace("[gx] NaN position matrix %u loaded from %p\n", (unsigned) id, __builtin_return_address(0));
+    }
 }
 
 void GXLoadNrmMtxImm(const f32 mtx[3][4], u32 id)
@@ -1136,6 +1460,11 @@ void GXCallDisplayList(void* list, u32 nbytes)
 {
     if (!inited) GXInit_port();
     immFlush();
+    if (nbytes > 0x400000 || list == NULL) {  // a size from an unconverted header: walking it would take seconds
+        static u32 nb;
+        if (++nb <= 20) port_trace("[gx] display list %p of %u bytes refused\n", list, (unsigned) nbytes);
+        return;
+    }
     const u8* p = (const u8*) list;
     const u8* end = p + nbytes;
     if (nbytes >= 4 && memcmp(p, "1LDP", 4) == 0) {
@@ -1439,7 +1768,10 @@ void GXInitTlutObj(GXTlutObj* obj, void* lut, int fmt, u16 n_entries)
 
 void GXLoadTlut(GXTlutObj* obj, u32 tlut_name)
 {
-    if (tlut_name < 20) tlutTable[tlut_name] = (const TlutPort*) obj;
+    if (tlut_name < 20) {
+        tlutTable[tlut_name] = *(const TlutPort*) obj;
+        tlutLoaded[tlut_name] = 1;
+    }
 }
 
 void GXLoadTexObj(GXTexObj* obj, int id)
@@ -1501,6 +1833,7 @@ void GXCopyTex(void* dest, u8 clear)
     }
     // GX_CTF_A8 (0x27) keeps the alpha, the Z formats (GX_TF_Z8 0x11 .. GX_TF_Z24X8 0x16) the depth
     int mode = copyDstFmt == 0x27 ? 1 : (copyDstFmt >= 0x11 && copyDstFmt <= 0x16) ? 2 : 0;
+    port_gx_stat_copies++;
     pg_copy_frame(r->buf, r->pw, r->ph, (int) (copySrc[0] * sx()), (int) (copySrc[1] * sy()),
                   (int) (copySrc[2] * sx()), (int) (copySrc[3] * sy()), mode);
     if (clear) {

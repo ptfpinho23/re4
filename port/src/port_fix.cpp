@@ -42,6 +42,18 @@ extern "C" BlockHeader* port_fix_block(BlockHeader* h)
 }
 
 #include "sce_at.h"
+#include "flr_at.h"
+
+extern "C" FlrAtHead* port_fix_flr(FlrAtHead* p)
+{
+    // flr_at.cpp: FlrAt records of 0x84 bytes from 0x10, each with an AreaData at +0x14 (the
+    // payload's multi-byte fields are be_ typed)
+    FlrAt* at = (FlrAt*) (p + 1);
+    for (u32 i = 0; i < p->num; i++) {
+        swapArea((AreaData*) at[i].area);
+    }
+    return p;
+}
 
 static inline void swap32(void* p)
 {
@@ -152,4 +164,107 @@ extern "C" void* port_fix_sce_at(void* p)
         swapSceAt((SceAtWork*) (b + 0x10 + i * sizeof(SceAtWork)));
     }
     return p;
+}
+
+// A SAT file (atari.cpp cSat: a room's collision mesh): cSatFile header (u16 counts), then Vec
+// vertices, Vec face normals, Vec edge normals, AtPoly polygons (0x14 bytes) and the block tree
+// (cSatBlock: two Vec, four u16, the next-sibling offset, then u16 polygon indices or, with flag
+// bit 0, an inline child block). The game keeps the file as its runtime structure (pointers into
+// it for the collision math), so it is byte-swapped in place once. Runtime-built SATs
+// (createBoxSat) never come through here.
+#include "atari.h"
+#include "at_sub.h"
+static const void* satFixed[1024];
+static int satFixedCount;
+
+static inline void swap32p(void* p) { u32 v; __builtin_memcpy(&v, p, 4); v = __builtin_bswap32(v); __builtin_memcpy(p, &v, 4); }
+static inline void swap16p(void* p) { u16 v; __builtin_memcpy(&v, p, 2); v = (u16) __builtin_bswap16(v); __builtin_memcpy(p, &v, 2); }
+static inline u32 rd32(const void* p) { u32 v; __builtin_memcpy(&v, p, 4); return v; }
+static inline u16 rd16(const void* p) { u16 v; __builtin_memcpy(&v, p, 2); return v; }
+
+extern "C" void port_trace(const char* fmt, ...);
+static int satBad;  // set when a block of the file being swapped is not credible: the walk stops
+
+static void swapSatBlock(u8* b, u8* fileEnd, u32 nPoly, int depth)
+{
+    while (b && b + 0x24 <= fileEnd && !satBad) {
+        for (int i = 0; i < 6; i++) swap32p(b + i * 4);      // min, size
+        for (int i = 0; i < 4; i++) swap16p(b + 0x18 + i * 2);  // nFloor, nSlope, nWall, flag
+        swap32p(b + 0x20);                                    // the next-sibling offset
+        u16 flag = rd16(b + 0x1E);
+        u32 next = rd32(b + 0x20);
+        u32 n = rd16(b + 0x18) + rd16(b + 0x1A) + rd16(b + 0x1C);
+        if (n > nPoly || (flag & ~3u) || next > 0x100000 || (next && next < 0x24) || depth > 24) {
+            port_trace("[port] port_fix_sat: block %p not credible (n %u of %u, flag %x, next %x, depth %d)\n", b, n, nPoly, flag, next, depth);
+            satBad = 1;
+            return;
+        }
+        if (flag & 1) {
+            swapSatBlock(b + 0x24, fileEnd, nPoly, depth + 1);  // one inline child (its chain follows it)
+        } else {
+            for (u32 i = 0; i < n; i++) swap16p(b + 0x24 + i * 2);
+        }
+        b = next ? b + next : NULL;
+    }
+}
+
+static void satRegister(const void* f)
+{
+    if (satFixedCount < 1024) {
+        satFixed[satFixedCount++] = f;
+    } else {
+        static int warned;
+        if (!warned++) port_trace("[port] port_fix_sat: more than 1024 files: a file could be swapped twice\n");
+    }
+}
+
+extern "C" void port_fix_sat_native(cSatFile* f)
+{
+    if (f) satRegister(f);
+}
+
+// A runtime-built or copied SAT is already in host order: its counts read sensibly as they are
+// and not byte-swapped. (A file's counts read big-endian.)
+static int satLooksNative(const u8* b)
+{
+    u32 np = rd16(b + 0xA), nv = rd16(b + 2);
+    u32 npBE = (u16) __builtin_bswap16((u16) np), nvBE = (u16) __builtin_bswap16((u16) nv);
+    return np != 0 && np <= 0x1FFF && nv != 0 && nv <= 0x4000 && (npBE > 0x1FFF || nvBE > 0x4000);
+}
+
+extern "C" cSatFile* port_fix_sat(cSatFile* f)
+{
+    if (f == NULL) return f;
+    for (int i = 0; i < satFixedCount; i++) {
+        if (satFixed[i] == f) return f;
+    }
+    u8* b = (u8*) f;
+    if (satLooksNative(b)) {
+        satRegister(f);
+        return f;
+    }
+    if ((b[0] & 0x80) && b[0] != 0xFF) {  // a SAT table header (cSatHeader), not a file: the caller resolves it first
+        port_trace("[port] port_fix_sat: %p is not a SAT file (version byte %02x)\n", f, b[0]);
+        return f;
+    }
+    satRegister(f);
+    for (int i = 1; i < 10; i++) swap16p(b + i * 2);          // the nine u16 counts after the version bytes
+    u32 nv = rd16(b + 2), nn = rd16(b + 4), ne = rd16(b + 6), np = rd16(b + 0xA), nb = rd16(b + 0x12);
+    if (nv > 0x4000 || nn > 0x4000 || ne > 0x4000 || np > 0x1FFF || nb > 0x1000) {
+        port_trace("[port] port_fix_sat: %p counts not credible (%u vertices %u normals %u edges %u polygons %u blocks)\n", f, nv, nn, ne, np, nb);
+        return f;
+    }
+    u8* p = b + 0x14;
+    for (u32 i = 0; i < (nv + nn + ne) * 3; i++) swap32p(p + i * 4);
+    p += (nv + nn + ne) * 12;
+    for (u32 i = 0; i < np; i++) {  // AtPoly: seven u16 (vertices, normal, edges), a pad, the u32 attribute
+        for (int k = 0; k < 7; k++) swap16p(p + i * 20 + k * 2);
+        swap32p(p + i * 20 + 0x10);
+    }
+    p += np * 20;
+    // the blocks: nb top-level blocks are not consecutive in general; the tree starts at the first
+    u8* end = p + nb * 0x2000 + 0x10000;  // a generous bound: the chain itself ends the walk
+    satBad = 0;
+    if (nb) swapSatBlock(p, end, np, 0);
+    return f;
 }

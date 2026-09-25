@@ -43,21 +43,21 @@ struct ShadowLightWork {
 };
 
 // Shadow object placement file (room "SHD" data): header then `num` entries.
-struct ShdEntry {
-    Vec pos;      // 0x00
-    Vec rot;      // 0x0C
-    Vec scale;    // 0x18
+struct ShdEntry {  // file-resident: big-endian fields
+    BeVec pos;      // 0x00
+    BeVec rot;      // 0x0C
+    BeVec scale;    // 0x18
     u8 model;     // 0x24  index into the model offset table
     u8 x25;
     u8 shdCol;    // 0x26  -> cModel::shdCol
     u8 pad_27[0x48 - 0x27];
 };
 
-struct ShdHeader {
+struct ShdHeader {  // file-resident: big-endian fields
     u8 version;   // 0x00  (> 0x41 rejected; <= 0x1F: shdCol 0 means 0xFF)
     u8 x1;
-    u16 num;      // 0x02
-    u32 tblOfs;   // 0x04  byte offset of the model offset table (u32[], relative to itself)
+    be_u16 num;   // 0x02
+    be_u32 tblOfs;   // 0x04  byte offset of the model offset table (u32[], relative to itself)
     u8 pad_8[0x10 - 0x08];
     ShdEntry entry[1];  // 0x10
 };

@@ -34,6 +34,9 @@
 // A load-time fix-up of file data the port converts in place (areas: runtime and file structs share
 // the layout): the matching build binds the pointer as it is.
 #define PORT_FIX(fn, p) p
+// An RGBA word (0xRRGGBBAA as a number) stored into a u8[4] colour array: the bytes land in
+// memory order on the GameCube; the port swaps so color[0] stays R.
+#define RGBA_BYTES(v) v
 #else
 #define REG_PIN(r)
 #define ASM_ANCHOR(s)
@@ -76,12 +79,17 @@ extern unsigned char port_lowmem[0x100];  // port_gcmem.cpp: the bus clock word 
 #define OT_IS_WORK(v) !((u32) (v) & 0x80000000u)
 #define OT_IS_SLOT(v) (((u32) (v) & 0x80000000u) != 0)
 #define PORT_FIX(fn, p) fn(p)
+#define RGBA_BYTES(v) __builtin_bswap32((unsigned int) (v))
 #ifdef __cplusplus
 struct LightAreaHed;
 struct BlockHeader;
 extern "C" LightAreaHed* port_fix_light_area(LightAreaHed* p);  // port/src/port_fix.cpp
 extern "C" BlockHeader* port_fix_block(BlockHeader* h);
 extern "C" void* port_fix_sce_at(void* p);  // an AEV / ITA file
+class cSatFile;
+extern "C" cSatFile* port_fix_sat(cSatFile* f);  // a room collision (SAT) file
+extern "C" void port_fix_sat_native(cSatFile* f);  // a SAT built at run time: registered as already native
+extern "C" struct FlrAtHead* port_fix_flr(struct FlrAtHead* p);  // a room floor attribute (FSE) file
 #endif
 #endif
 

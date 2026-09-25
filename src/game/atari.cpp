@@ -677,7 +677,7 @@ cSat* cSatMgr::create(void* data, int flag, Vec* pos, Vec* rot, u8 type)
     if (hdr->m_Version != 0xFF && (hdr->m_Version & 0x80)) {
         data = hdr->getSat(type);
     }
-    sat->init((cSatFile*) data, pos ? pos : (Vec*) &vecZero, rot ? rot : (Vec*) &vecZero);
+    sat->init(PORT_FIX(port_fix_sat, (cSatFile*) data), pos ? pos : (Vec*) &vecZero, rot ? rot : (Vec*) &vecZero);
     return sat;
 }
 
@@ -699,6 +699,9 @@ cSat* cSatMgr::create(Vec* pPos, Vec* pAng, Vec* pVec, f32 height, u32 attr, u32
     if (f == 0) {
         return 0;
     }
+#ifdef RE4_PORT
+    port_fix_sat_native(f);  // built in memory, in host byte order: not a file to byte-swap
+#endif
     sat = create(f, flag, pPos, pAng, 0);
     if (sat) {
         sat->m_Flag |= 2;
@@ -1236,7 +1239,7 @@ cSatFile* cSatHeader::getSat(int no)
 {
     u32* tbl = ofs;
 
-    return (cSatFile*) ((u8*) this + *(u32*) (no * 4 + (u32) tbl));
+    return (cSatFile*) ((u8*) this + FILE_U32(*(u32*) (no * 4 + (u32) tbl)));
 }
 
 // The three builders below with precomputed normals were dead-stripped by the linker; their

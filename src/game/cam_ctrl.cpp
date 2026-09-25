@@ -6,6 +6,9 @@
 // cameras in cam_extra.cpp) plug in as cCamera objects. Move() produces the frame's camera
 // through the cut interpolation and smoothing; CameraMove (camera.cpp) copies it into pG->Camera.
 
+#ifdef RE4_PORT
+#include "port_psp.h"
+#endif
 #include "types.h"
 #include "vec.h"
 #include "global.h"
@@ -46,20 +49,30 @@ static const f32 smooth_ratio[12] = {0.0f, 0.9f, 0.85f, 0.92f, 0.8f, 0.92f, 0.9f
 // Byte-wise copy of the float `tmp` into the (unaligned) motion buffer. `&tmp` indexed directly
 // (a pointer local is copy-propagated into loops 2/3), `n` is the function-scope counter shared
 // by the three copies (one allocno -> r11 in all three, the `&tmp` copies fall to r12/r9/r9).
+#ifndef RE4_PORT
 #define EXPORT_TMP(p)                             \
     {                                             \
         for (n = 0; n < 4; n++) {                 \
             *(p)++ = ((u8*) &tmp)[n];             \
         }                                         \
     }
+#else
+// the exported motion is read by the motion file parser, which expects big-endian keys
+#define EXPORT_TMP(p)                             \
+    {                                             \
+        for (n = 0; n < 4; n++) {                 \
+            *(p)++ = ((u8*) &tmp)[3 - n];         \
+        }                                         \
+    }
+#endif
 
 // Converts a rail cut into the CameraMotion key-frame format (cam_motion): header, 4 channels
 // (pos, at, roll, fovy) x 3 components of hermite keys {value, tangent in, tangent out}.
 int CameraControl::HermiteExport(CameraCut* pCdat, u8* p)
 {
     u8* buf = p;  // the parameter is the running pointer (r5: `sth 0(r5); stbu 2(r5); addi r5,1`), buf the saved base
-    u32* table;
-    u16* frames;
+    be_u32* table;
+    be_u16* frames;
     int i;
     int j;
     int k;
@@ -74,18 +87,18 @@ int CameraControl::HermiteExport(CameraCut* pCdat, u8* p)
     f32 dt1;
     int n;
 
-    *(u16*) p = (pCdat->num - 1) * 30;
+    *(be_u16*) p = (pCdat->num - 1) * 30;
     p += 2;
     *p++ = 4;
     for (i = 0; i < 4; i++) {
         switch (i) {
         case 0:
         case 1:
-            *(u16*) p = 4;
+            *(be_u16*) p = 4;
             break;
         case 2:
         case 3:
-            *(u16*) p = 2;
+            *(be_u16*) p = 2;
             break;
         }
         p += 2;
@@ -96,7 +109,7 @@ int CameraControl::HermiteExport(CameraCut* pCdat, u8* p)
     *p++ = 0;
     *(u32*) p = 0;
     p += 4;
-    table = (u32*) p;
+    table = (be_u32*) p;
     for (i = 0; i < 4; i++) {
         *(u32*) p = 0;
         p += 4;
@@ -104,17 +117,17 @@ int CameraControl::HermiteExport(CameraCut* pCdat, u8* p)
     for (i = 0; i < 4; i++) {
         table[i] = p - buf;
         for (j = 0; j < 3; j++) {
-            *(u16*) p = pCdat->num;
+            *(be_u16*) p = pCdat->num;
             p += 2;
             v = 0.0f;
             v0 = 0.0f;
             v1 = 0.0f;
-            frames = (u16*) p;
+            frames = (be_u16*) p;
             for (k = 0; k < pCdat->num; k++) {
                 if (pCdat->frames == NULL) {
-                    *(u16*) p = k * 30;
+                    *(be_u16*) p = k * 30;
                 } else {
-                    *(u16*) p = pCdat->frames[k];
+                    *(be_u16*) p = pCdat->frames[k];
                 }
                 p += 2;
             }
@@ -182,7 +195,7 @@ int CameraControl::HermiteExport(CameraCut* pCdat, u8* p)
             }
         }
     }
-    *(u16*) buf = frames[pCdat->num - 1];
+    *(be_u16*) buf = frames[pCdat->num - 1];
     return p - buf;
 }
 
@@ -1261,6 +1274,16 @@ void CameraControl::Move()
     }
     CamSmth.move(&m_Inter.param);
     camera.param = *CamSmth.getParam();
+#ifdef RE4_PORT
+    {
+        static int nTr;
+        if (++nTr <= 12)
+            port_trace("[port] CamCtrl r0 %d area %d cam %d cut %p: cur %g %g %g / %g %g %g roll %g fovy %g; inter(%d) %g %g %g fovy %g; smooth(flag %x ratio %g) %g %g %g fovy %g; pl %g %g %g\n",
+                       r0, areaNo, cameraNo, area_rec ? area_rec->cut : NULL, cur.pos.x, cur.pos.y, cur.pos.z, cur.at.x, cur.at.y, cur.at.z, cur.roll, cur.fovy,
+                       (int) m_Inter.frame, m_Inter.param.pos.x, m_Inter.param.pos.y, m_Inter.param.pos.z, m_Inter.param.fovy,
+                       (unsigned) CamSmth.m_flag, CamSmth.m_ratio, camera.param.pos.x, camera.param.pos.y, camera.param.pos.z, camera.param.fovy, pPL->pos.x, pPL->pos.y, pPL->pos.z);
+    }
+#endif
     CameraSetOrientationRoll(&camera);
     if (!DbgFlagChk(pG, DBG_DBG_CAM) && (m_state_flag & 4)) {
         pG->Camera = CamCtrl.camera;

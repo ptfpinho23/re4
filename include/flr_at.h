@@ -21,10 +21,10 @@ struct FLR_AT_BGM_VOL {         // id 2 (BGM volume control)
     u8 blk_no;                  // 0x00  bit i: BGM slot i controlled, 0x10: stream
     u8 sw;                      // 0x01  bit i: set volume (else reset), 0x10: stream play (else stop)
     s8 set_vol[2];              // 0x02  BGM volume per slot
-    int time[2];                // 0x04  BGM fade time per slot
-    u16 str_blk;                // 0x0C  stream block (0 BGM, 1 VOICE)
-    u16 str_no;                 // 0x0E  stream number
-    u32 str_fade_time;          // 0x10  SndStrReq time argument
+    be_s32 time[2];             // 0x04  BGM fade time per slot
+    be_u16 str_blk;             // 0x0C  stream block (0 BGM, 1 VOICE)
+    be_u16 str_no;              // 0x0E  stream number
+    be_u32 str_fade_time;       // 0x10  SndStrReq time argument
 };
 
 struct FLR_AT_THUNDER_VOL {     // id 3 (thunder volume)
@@ -40,7 +40,7 @@ struct FlrAt {
     u8 group;        // 0x03  group (FlrSys::group 0xFF = any)
     u8 priority;     // 0x04  save order in the tool (15 first)  (PS2 priority)
     u8 padd[15];     // 0x05  (PS2 padd)
-    u8 area[0x30];   // 0x14  area passed to AreaHitCheck
+    u8 area[0x30];   // 0x14  area passed to AreaHitCheck (an AreaData: port_fix_flr byte-swaps it)
     union {          // 0x44  payload by `type`
         u8 dmy[64];
         FLR_AT_SE_TYPE se;
@@ -53,8 +53,8 @@ struct FlrAt {
 // "FSE" room file header (pG->pRoomArc), followed by the FlrAt records at 0x10 (PS2 FLR_AT_HEADER).
 struct FlrAtHead {
     char magic[4];   // 0x00  "FSE"
-    u16 version;     // 0x04  0x103
-    u16 num;         // 0x06  record count
+    be_u16 version;  // 0x04  0x103
+    be_u16 num;      // 0x06  record count
     u8 cartridge_type;  // 0x08  default cartridge SE offset (snd.cpp SE 0xF with no record)  (PS2 cartridge_type)
     u8 padd1;        // 0x09
     u16 padd2;       // 0x0A

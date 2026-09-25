@@ -183,21 +183,18 @@ BOOL DVDReadAsyncPrio(DVDFileInfo* fileInfo, void* addr, s32 length, s32 offset,
 {
     s32 entry = (s32) fileInfo->startAddr;
     s32 n = -1;
-    dvdLock();
+    // No lock around the read itself: the game's scheduler may kill the reading task's thread
+    // mid-read (cDvd::ReadNblk2Blk turns a background read into a blocking one), which would
+    // leave the lock taken. Each read opens its own descriptor; the table is fixed after findRoot.
     int known = entry >= 0 && (u32) entry < entryCount;
     if (known) {
-        if (openEntry != entry) {
-            if (openFd >= 0) {
-                sceIoClose(openFd);
-            }
-            char full[192];
-            fullPath(full, entries[entry].path);
-            openFd = sceIoOpen(full, PSP_O_RDONLY, 0);
-            openEntry = openFd >= 0 ? entry : -1;
-        }
-        if (openFd >= 0) {
-            sceIoLseek(openFd, offset, PSP_SEEK_SET);
-            n = sceIoRead(openFd, addr, (u32) length);
+        char full[192];
+        fullPath(full, entries[entry].path);
+        int fd = sceIoOpen(full, PSP_O_RDONLY, 0);
+        if (fd >= 0) {
+            sceIoLseek(fd, offset, PSP_SEEK_SET);
+            n = sceIoRead(fd, addr, (u32) length);
+            sceIoClose(fd);
             // The game reads 32-byte multiples past the end of a file; the disc had padding there.
             if (n >= 0 && n < length) {
                 memset((u8*) addr + n, 0, length - n);
@@ -213,7 +210,6 @@ BOOL DVDReadAsyncPrio(DVDFileInfo* fileInfo, void* addr, s32 length, s32 offset,
     fileInfo->cb.currTransferSize = (u32) length;
     fileInfo->cb.transferredSize = n < 0 ? 0 : (u32) n;
     fileInfo->callback = callback;
-    dvdUnlock();
     if (callback) {
         callback(n < 0 ? DVD_RESULT_FATAL_ERROR : n, fileInfo);
     }

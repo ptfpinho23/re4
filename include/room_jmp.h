@@ -9,18 +9,18 @@
 // room count followed by CRoomInfo[count]. The string offsets are relative to the table until
 // cRoomJmp's constructor turns them into pointers.
 
-struct CRoomInfo {
-    u16 flag;      // 0x00  bit 0: pos/angle valid
+struct CRoomInfo {  // file-resident (debug/roomInfo.dat): big-endian fields
+    be_u16 flag;   // 0x00  bit 0: pos/angle valid
     union {
-        u16 roomNo;  // 0x02  stage << 8 | room
+        be_u16 roomNo;  // 0x02  stage << 8 | room
         struct {
             u8 stage;  // 0x02
             u8 room;   // 0x03
         };
     };
-    Vec pos;        // 0x04
-    f32 angle;      // 0x10
-    char* name;     // 0x14
+    BeVec pos;      // 0x04
+    be_f32 angle;   // 0x10
+    char* name;     // 0x14  file offsets until cRoomJmp's constructor relocates them
     char* person;      // 0x18
     char* person2;     // 0x1C
 

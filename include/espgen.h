@@ -27,23 +27,23 @@ struct EspSeqOpt {
 
 // Effect system work (game/eff_sys.cpp cEspSystem, g_pEspSys). Partial layout.
 // Room effect (sst) table entry: an effect list and the offsets of its EspSeqData blocks (game/est.cpp SstSet).
-struct SstList {
-    u32 num;           // 0x00
+struct SstList {       // file-resident (the effect archive): big-endian fields
+    be_u32 num;        // 0x00
     struct {
         union {
-            u16 no;    // 0x00 room number range key
+            be_u16 no; // 0x00 room number range key
             struct {
                 u8 x0;
                 u8 id; // 0x01 display flag bit (GetSstDispFlag)
             } b;
         };
-        u16 type;      // 0x02
-        u32 Flg;        // 0x04  (PS2 ESP_ID_WK.Flg)
+        be_u16 type;   // 0x02
+        be_u32 Flg;    // 0x04  (PS2 ESP_ID_WK.Flg)
     } ent[1];          // 0x04, 8 bytes each
 };
 struct SstData {
-    u32 Num;            // 0x00  (PS2 ESP_COMMON_HEADER.Num)
-    u32 ofs[1];        // 0x04 byte offsets of the EspSeqData blocks from this header
+    be_u32 Num;        // 0x00  (PS2 ESP_COMMON_HEADER.Num)
+    be_u32 ofs[1];     // 0x04 byte offsets of the EspSeqData blocks from this header
 };
 struct SstTbl {
     SstData* data;     // 0x00

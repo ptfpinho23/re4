@@ -76,7 +76,7 @@ cRoomJmp::cRoomJmp(void* p)
     CRoomInfo* info;
 
     tbl = (u32*) p;
-    for (stage = 0; stage < tbl[0]; stage++) {
+    for (stage = 0; stage < FILE_U32(tbl[0]); stage++) {
         if (getIndexNum(stage) == 0) {
             continue;
         }
@@ -88,9 +88,9 @@ cRoomJmp::cRoomJmp(void* p)
             if (GC_PTR_GOOD(info->name)) {
                 return;
             }
-            info->name = (char*) ((u32) tbl + (u32) info->name);
-            info->person = (char*) ((u32) tbl + (u32) info->person);
-            info->person2 = (char*) ((u32) tbl + (u32) info->person2);
+            info->name = (char*) ((u32) tbl + FILE_U32(info->name));
+            info->person = (char*) ((u32) tbl + FILE_U32(info->person));
+            info->person2 = (char*) ((u32) tbl + FILE_U32(info->person2));
         }
     }
 }
@@ -99,12 +99,12 @@ cRoomJmp::cRoomJmp(void* p)
 s8 cRoomJmp::getIndexNum(s8 stage)
 {
     u32* p = tbl;
-    u32 ofs = ofsTbl(p)[stage];
+    u32 ofs = FILE_U32(ofsTbl(p)[stage]);
 
     if (ofs == 0) {
         return 0;
     }
-    return *((s8*) p + ofs + 3);
+    return *((s8*) p + ofs + 3);  // the low byte of the big-endian count
 }
 
 // Number of jump points of `room`: consecutive records with the same room number.
@@ -132,13 +132,13 @@ CRoomInfo* cRoomJmp::getRoomInfo(u8 st, u8 idx)
     u32 n;
     u32 base;
 
-    if (st >= p[0]) {
+    if (st >= FILE_U32(p[0])) {
         return 0;
     }
     // COMPILER-DIFF: tie. The loop notes double the weight of this `ofs` set, so local-alloc
     // allocates ofs before n (ofs r0, n r11) and global-alloc can give base the freed r0.
-    do { ofs = (p + 1)[st]; } while (0);
-    n = *(u32*) ((u8*) p + ofs);
+    do { ofs = FILE_U32((p + 1)[st]); } while (0);
+    n = FILE_U32(*(u32*) ((u8*) p + ofs));
     base = (u32) p + ofs;
     if (idx >= n) {
         return 0;
@@ -174,11 +174,11 @@ void cRoomJmp::setNextPos(u8 Stage, u8 Room)
 s8 cRoomJmp::getNextStageNo(s8 stage, int add)
 {
     u32* p = tbl;
-    u32 n = p[0];
+    u32 n = FILE_U32(p[0]);
 
     do {
         stage = (n + stage + add) % n;
-    } while (ofsTbl(p)[stage] == 0);
+    } while (FILE_U32(ofsTbl(p)[stage]) == 0);
     return stage;
 }
 
@@ -240,7 +240,7 @@ s8 cRoomJmp::getNextPointNo(s8 stage, s8 room, s8 point, s8 add)
 // `room` when it is a valid record of `stage`, else -1.
 s8 cRoomJmp::checkRoomNo(s8 stage, s8 room)
 {
-    if ((u8) stage >= tbl[0] || getIndexNum(stage) == 0 || getRoomInfo(stage, room) == 0) {
+    if ((u8) stage >= FILE_U32(tbl[0]) || getIndexNum(stage) == 0 || getRoomInfo(stage, room) == 0) {
         return -1;
     }
     return room;

@@ -12,6 +12,7 @@ extern "C" void port_log(const char* fmt, ...);
 
 static int exitCallback(int arg1, int arg2, void* common)
 {
+    port_log("[port] exit callback (HOME / the host): leaving\n");
     sceKernelExitGame();
     return 0;
 }

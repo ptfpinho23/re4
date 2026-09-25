@@ -359,7 +359,11 @@ void cManager<T>::destroyAll()
 template <class T>
 inline void cManager<T>::destroy(T* p)
 {
+#ifndef RE4_PORT
     if ((u32)p < 0x80000000 || (u32)p > 0x82FFFFFF) {
+#else
+    if (!GC_PTR_OK(p)) {  // the GameCube's main memory range, spelled out here: the port's RAM range
+#endif
         if (p != 0) {
             log("%s::destroy() ERROR, INVALID  PTR %08X", name, p);
         }

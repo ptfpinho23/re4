@@ -10,6 +10,7 @@
 #include <string.h>
 
 extern "C" {
+unsigned int port_pad_raw;  // the last raw PSP button word
 
 BOOL PADInit(void)
 {
@@ -25,6 +26,7 @@ u32 PADRead(PADStatus* status)
     memset(&d, 0, sizeof(d));
     sceCtrlPeekBufferPositive(&d, 1);
     u16 b = 0;
+    port_pad_raw = d.buttons;  // for the port's own triggers (port_gu.cpp: NOTE dumps a frame)
     if (d.buttons & PSP_CTRL_CROSS) b |= PAD_BUTTON_A;
     if (d.buttons & PSP_CTRL_CIRCLE) b |= PAD_BUTTON_B;
     if (d.buttons & PSP_CTRL_TRIANGLE) b |= PAD_BUTTON_X;

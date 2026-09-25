@@ -4,6 +4,10 @@
 // Slot 0 is the game, 1 debug / sub screen / movie tasks, 4 the background (ISR) task, 5..17 the
 // scenario tasks (sce_sys). Task flags decide whether a slot keeps running during events and the
 // sub screen. (D:/Bio4/Prog/scheduler.cpp)
+#ifdef RE4_PORT
+#include "port_psp.h"
+extern "C" int sceKernelGetThreadId(void);
+#endif
 #include "types.h"
 #include "global.h"
 #include "main_mem.h"
@@ -13,6 +17,9 @@
 #include "scheduler.h"
 #include <dolphin/gx/GXFifo.h>
 #include <dolphin/os.h>
+#ifdef RE4_PORT
+extern "C" void port_heap_check(const char* stage);  // main.cpp: the game heap consistency, for the port's search of a corruption
+#endif
 
 void DbMenuRestoreStopFlag();
 
@@ -92,6 +99,12 @@ void TaskScheduler()
         }
         pCTask = t;
         TaskSchedulerMain(t);
+#ifdef RE4_PORT
+        {
+            static const char* const slot[] = {"task 0", "task 1", "task 2", "task 3", "task 4"};
+            port_heap_check(slot[i < 5 ? i : 4]);
+        }
+#endif
     }
     pCTask = CTASK_MAIN;
     if (pG->debug_mode == 6) {
@@ -111,6 +124,13 @@ void TaskSchedulerMain(TASK* pT)
     if (StaFlagChk(pG, STA_DIEDEMO) && !(pT->flag & 4)) {
         return;
     }
+#ifdef RE4_PORT
+    // iTaskScheduler runs this with interrupts disabled. On the GameCube that state is the
+    // caller's own (the task thread runs with its own), on the PSP it is a lock every thread
+    // shares: hand it back while the task runs, or a task that masks interrupts (the disc
+    // reader) deadlocks against this thread's wait below.
+    BOOL intrLevel = pParentThread == NULL ? OSEnableInterrupts() : 1;
+#endif
     switch (pT->Status) {
     case TASK_EXEC:
         OSCreateThread(&pT->Thread, pT->hook, (void*) pT->arg, pT->pStack, pT->StackSize, pT->Priority, 1);
@@ -132,12 +152,33 @@ void TaskSchedulerMain(TASK* pT)
         GXSetCurrentGXThread();
         break;
     default:
+#ifdef RE4_PORT
+        if (pParentThread == NULL) OSRestoreInterrupts(intrLevel);
+#endif
         return;
     }
     if (pCTask->Priority > 0xF) {
         OSWaitSemaphore(&Sema);
         GXSetCurrentGXThread();
     }
+#ifdef RE4_PORT
+    // The background (ISR) task has no parent to suspend: on the GameCube its priority keeps the
+    // main thread off the CPU until it sleeps, exits or the retrace suspends it. On the PSP its
+    // thread blocks in disc reads, which would hand the CPU back with the task still "running";
+    // wait for the task to reach one of those states instead.
+    if (pParentThread == NULL) {
+        // A task whose function returns (a scenario task, whose thread then just ends) keeps
+        // TASK_RUN: its thread is moribund by then.
+        while (pT->Status == TASK_RUN && pT->Thread.state != OS_THREAD_STATE_MORIBUND) {
+            OSYieldThread();
+        }
+        {
+            static int nTr;
+            if (++nTr <= 40) port_trace("[port] TaskSchedulerMain(ISR) done: status %x thread state %d\n", pT->Status, (int) pT->Thread.state);
+        }
+        OSRestoreInterrupts(intrLevel);
+    }
+#endif
     StackOverflowCheck(pT);
 }
 
@@ -286,6 +327,9 @@ void TaskKill(int prio)
 // exits; slot freed.
 void TaskKill(TASK* t)
 {
+#ifdef RE4_PORT
+    port_trace("[port] TaskKill slot %d: status %x, thread state %d, from thread %d\n", (int) (t - Task), t->Status, (int) t->Thread.state, sceKernelGetThreadId());
+#endif
     if (t->Status == 0) {
         return;
     }
@@ -300,6 +344,15 @@ void TaskKill(TASK* t)
         if (t->Status & TASK_SUSPEND) {
             OSCancelThread(&t->Thread);
         } else {
+#ifdef RE4_PORT
+            // On the GameCube a running task means the caller is that task. On the PSP the task's
+            // thread can be blocked in a disc read while another thread (the main loop) kills it:
+            // cancel it instead of exiting the caller.
+            if (OSGetCurrentThread() != &t->Thread) {
+                OSCancelThread(&t->Thread);
+                break;
+            }
+#endif
             TaskExit();
         }
         break;
@@ -401,12 +454,34 @@ void iTaskSuspend()
 {
     if (iTask_exec_flg == 1) {
         TASK* t = &Task[TASK_ISR];
+#ifdef RE4_PORT
+        static int nTr;
+        if (++nTr <= 40) port_trace("[port] iTaskSuspend: status %x thread state %d\n", t->Status, (int) t->Thread.state);
+#endif
         if (t->Thread.state == 2) {
             t->Status |= TASK_SUSPEND;
             OSSuspendThread(&t->Thread);
         }
     }
 }
+
+#ifdef RE4_PORT
+// The background task's own check of the retrace suspension: sceKernelSuspendThread from the
+// vblank thread does not hold a thread that is blocked in a kernel wait (a disc read) when the
+// wait ends, so the task also stops itself here, at the safe points of its loops, until
+// iTaskScheduler lets it run again. Its window is the end of the frame; outside it the main
+// thread's own disc reads share the DVD layer's buffers with it.
+void port_isr_checkpoint(void)
+{
+    TASK* t = &Task[TASK_ISR];
+    if (OSGetCurrentThread() != &t->Thread) {  // (pCTask is the task the main thread schedules)
+        return;
+    }
+    while ((t->Status & TASK_SUSPEND) && iTask_exec_flg == 1) {
+        OSYieldThread();
+    }
+}
+#endif
 
 // 1 while an ISR task runs.
 int iTaskStatus()

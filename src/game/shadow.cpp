@@ -105,7 +105,7 @@ ShadowMng* GetSelfShadowMng(int no)
 // with the core archive's TPL). Returns their number.
 int ShdInit(ShdHeader* data)
 {
-    u32* ofsTbl;
+    be_u32* ofsTbl;  // the file's model offset table
     ShdEntry* e;
     int i;
 
@@ -121,7 +121,7 @@ int ShdInit(ShdHeader* data)
     g_objNum = data->num;
 #line 185 "D:/Bio4/Prog/shadow.cpp"
     g_objTbl = (cObj**) MEM_CALLOC(g_objNum * 4, 1, 13);
-    ofsTbl = (u32*) ((u8*) data + data->tblOfs);
+    ofsTbl = (be_u32*) ((u8*) data + data->tblOfs);
     e = data->entry;
     for (i = 0; i < data->num; i++) {
         cObj* obj = ObjMgr.create();

@@ -17,9 +17,22 @@ static int gameLinesShown;
 extern "C" int port_gx_active(void);
 extern "C" void port_gx_overlay_line(const char* text);
 
+// Every line also goes to ms0:/PSP/GAME/RE4/port.log (truncated at boot): a PSP has no host to
+// print to, and the emulator's own log is far too noisy to stream to the test driver.
+static int logFd = -1;
+static void fileWrite(const char* buf, int n)
+{
+    if (logFd == -1) {
+        logFd = sceIoOpen("ms0:/PSP/GAME/RE4/port.log", PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0666);
+        if (logFd < 0) logFd = -2;  // no memory stick / no directory: stdout and the screen only
+    }
+    if (logFd >= 0) sceIoWrite(logFd, buf, n);
+}
+
 static void emit(const char* buf, int n, int fromGame)
 {
     sceIoWrite(sceKernelStdout(), buf, n);
+    fileWrite(buf, n);
     if (port_gx_active()) {
         if (!fromGame) {
             port_gx_overlay_line(buf);
@@ -71,7 +84,8 @@ extern "C" void port_trace(const char* fmt, ...)
     int n = format(buf, sizeof(buf), fmt, ap);
     va_end(ap);
     if (n > 0) {
-        sceIoWrite(sceKernelStdout(), buf, n);
+        fileWrite(buf, n);  // the trace is voluminous: the log file only (stdout would flood the emulator's debugger)
+        if (logFd < 0) sceIoWrite(sceKernelStdout(), buf, n);
     }
 }
 

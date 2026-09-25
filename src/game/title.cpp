@@ -42,7 +42,11 @@
 #line 62
 
 // stage_prev/room_prev written as one u16 through a plain pointer (aliases pG like G_ROOM_ID).
+#ifndef RE4_PORT
 #define G_ROOM_ID_PREV (*(u16*) &pG->stage_prev)
+#else
+#define G_ROOM_ID_PREV (pG->room_id_prev)  // stage_prev is the halfword's second byte on the port
+#endif
 
 // Sub-file of the core archive (pG->pCore): `ofs + (u32) arc` (integer arithmetic, ofs first).
 #define G_ARC_PTR(field) ((void*) (pG->pCore->field + (u32) pG->pCore))

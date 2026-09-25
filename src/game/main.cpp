@@ -117,6 +117,28 @@ static void systemScreenInit();
 // render set-up, TaskScheduler (game logic), id sprites, Trans (3D draw), DVD/sound watchers,
 // fades, messages, cinescope, the 2D OT, log flush, interrupt tasks, render done, vsync wait
 // (GetSystemVcnt frames), buffer swap and systemResetCheck (soft reset -> RESTART).
+#ifdef RE4_PORT
+// Where in the frame the game heap first turns inconsistent (a loader or the port writing out of
+// bounds): OSCheckHeap after each stage, the first failure reported with its stage and frame.
+static void portHeapCheck(const char* stage)
+{
+    static int reported;
+    if (reported || pG == NULL) return;
+    for (int h = 0; h < MEM_HEAP_NUM; h++) {  // every live heap (a task may run on another "current" heap)
+        if (Heap[h].handle < 0) continue;
+        if (OSCheckHeap(Heap[h].handle) < 0) {
+            reported = 1;
+            OSReport("[port] game heap %d inconsistent after %s (frame %d, room %03x)\n", h, stage, pG->Frame_cnt, pG->room_id);
+            return;
+        }
+    }
+}
+#define HEAP_CHK(stage) portHeapCheck(stage)
+extern "C" void port_heap_check(const char* stage) { portHeapCheck(stage); }  // for the other units
+#else
+#define HEAP_CHK(stage)
+#endif
+
 int main()
 {
     int i;
@@ -164,11 +186,13 @@ RESTART:
             PadRead();
             DebugControl();
             Render();
+            HEAP_CHK("Render");
             ProcessTickGet(4, "RENDER SETUP");
             SetPrimBuffPtr();
             ClearOt();
             pG->Frame_cnt++;
             TaskScheduler();
+            HEAP_CHK("TaskScheduler");
             ProcessTickGet(5, "TaskScheduler");
             if (!SysFlagChk(pG, SYS_TRANS_STOP) || (StaFlagChk(pG, STA_SUB_SCRN))) {
                 IdSys.move();
@@ -179,8 +203,10 @@ RESTART:
             if (!SysFlagChk(pG, SYS_TRANS_STOP)) {
                 Trans();
             }
+            HEAP_CHK("Trans");
             Dvd.Watcher();
             SndWatcher();
+            HEAP_CHK("SndWatcher");
             ProcessTickGet(5, "SndWatcher");
             FadeControl(0);
             cMes.Move();
@@ -191,12 +217,14 @@ RESTART:
             }
             FadeControl(1);
             DrawOTag(&MainOt[4]);
+            HEAP_CHK("DrawOTag");
             if (pG->debug_mode != 7) {
                 pLog->disp();
             }
             EprintfFlush();
             ProcessTickGet(2, "PROCESS CPU");
             iTaskScheduler();
+            HEAP_CHK("iTaskScheduler");
             Render_done();
             Block.checkCommand();
             DC.check();
@@ -240,8 +268,12 @@ void postVSyncCallback()
 
 // Halts the game (write to 0x11111111) when no frame was presented for 3600 vsyncs and no
 // debugger is attached (hang detector).
+
 void haltExecCheck()
 {
+#ifdef RE4_PORT
+    return;  // the hang detector (3600 vsyncs without a frame) would kill the game while the emulator is slow or paused
+#endif
     int dbg = DBIsDebuggerPresent();
     if (dbg == 0 && vsync_cnt > 3599) {
 #line 548 "D:/Bio4/Prog/main.cpp"

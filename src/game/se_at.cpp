@@ -63,7 +63,7 @@ void SeAtCheck()
         }
         if (at->wait == 0) {
             if (at->cnt == 0) {
-                pos = &at->pos;
+                pos = BEVEC_PTR(at->pos);
                 if (at->flags2 & 1) {
                     pos = 0;
                 }
@@ -139,7 +139,7 @@ u32 SeAtSndCall(int no)
         if (at->flags2 & 1) {
             return SndCall(at->blk, at->se_no, 0, 0, 0, 0);
         }
-        return SndCall(at->blk, at->se_no, &at->pos, 0, 0, 0);
+        return SndCall(at->blk, at->se_no, BEVEC_PTR(at->pos), 0, 0, 0);
     }
     pLog->err(0, 0, "SeAtSeCall() : AT DATA NOT FOUND");
     return 0;

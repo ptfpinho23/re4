@@ -14,6 +14,10 @@
 //    exempt from the preceding stack stores, so all four stores rank equally in sched2 and the
 //    copy keeps its template order (with a plain `pSys` only the word-4 store gated the load via
 //    the r9 anti-dependence and its load ranked first).
+#ifdef RE4_PORT
+#include "port_psp.h"
+extern "C" int sceKernelGetThreadId(void);
+#endif
 #include "types.h"
 #include "dvd.h"
 
@@ -1222,11 +1226,19 @@ void cDvd::ReadProc()
 // Steps request `q` until it is done, running the disc error check when the read fails.
 void cDvd::readProcMain(cDvdQueue* pQueue)
 {
+#ifdef RE4_PORT
+    port_trace("[port] readProcMain(%s) enter on thread %d: rno %d.%d flag %08x\n", pQueue->m_Name, sceKernelGetThreadId(), pQueue->m_Rno0, pQueue->m_Rno1, (unsigned) pQueue->m_be_flag);
+#endif
     while (pQueue->Read() == 1) {
         if (!pQueue->chk(0x40000000)) {
             if (!pQueue->chk(0x100)) {
                 TaskSleep(1);
             }
+#ifdef RE4_PORT
+            else {
+                port_isr_checkpoint();
+            }
+#endif
         } else {
             ErrCheck(-1, 0);
         }
@@ -1243,6 +1255,9 @@ void cDvd::ReadNblk2Blk(int id)
     if (q == 0) {
         return;
     }
+#ifdef RE4_PORT
+    port_trace("[port] ReadNblk2Blk(%d) %s: status %d rno %d.%d flag %08x on thread %d\n", id, q->m_Name, q->getStatus(), q->m_Rno0, q->m_Rno1, (unsigned) q->m_be_flag, sceKernelGetThreadId());
+#endif
     switch (q->getStatus()) {
     case ST_READ:
         q->m_be_flag |= 0x40000000;

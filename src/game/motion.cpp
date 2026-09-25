@@ -554,7 +554,7 @@ u32 MotionMove(cModel* pEm, Camera* pCamera)
         pEm->partsWorldCalc();
     }
     if (MOTION(pEm)->blendTbl != 0) {
-        int n = *(s32*) MOTION(pEm)->blendTbl;
+        int n = FILE_U32(*(s32*) MOTION(pEm)->blendTbl);  // the motion file's blend table: big-endian
         u16* tbl = MOTION(pEm)->blendTbl + 2;
         int i;
 
@@ -573,10 +573,10 @@ u32 MotionMove(cModel* pEm, Camera* pCamera)
             f32 r;
 
             for (i = 0; i < n; i++) {
-                dst = pEm->getPartsPtr(*tbl++);
-                a = pEm->getPartsPtr(*tbl++);
-                c = pEm->getPartsPtr(*tbl++);
-                per = *tbl++;
+                dst = pEm->getPartsPtr(FILE_U16(*tbl++));
+                a = pEm->getPartsPtr(FILE_U16(*tbl++));
+                c = pEm->getPartsPtr(FILE_U16(*tbl++));
+                per = FILE_U16(*tbl++);
                 r = (f32) per / 100.0f;
                 if (MOTION_PARTS(dst)->flags & 0x10000) {
                     MOTION_PARTS(dst)->flags &= ~0x10000;

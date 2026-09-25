@@ -28,6 +28,7 @@ struct OSModuleLink {
     OSModuleInfo* prev;
 };
 
+#ifndef RE4_PORT
 struct OSModuleInfo {
     OSModuleID id;         // unique identifier for the module
     OSModuleLink link;     // doubly linked list of modules
@@ -37,16 +38,34 @@ struct OSModuleInfo {
     u32 nameSize;          // size of module name
     u32 version;           // version number
 };
+#else
+struct OSModuleInfo {      // the REL file's header, read from the disc: big-endian fields
+    be_u32 id;
+    OSModuleLink link;
+    be_u32 numSections;
+    be_u32 sectionInfoOffset;
+    be_u32 nameOffset;
+    be_u32 nameSize;
+    be_u32 version;
+};
+#endif
 
 struct OSModuleHeader {
     // CAUTION: info must be the 1st member
     OSModuleInfo info;
 
     // OS_MODULE_VERSION == 1
+#ifndef RE4_PORT
     u32 bssSize; // total size of bss sections in bytes
     u32 relOffset;
     u32 impOffset;
     u32 impSize;          // size in bytes
+#else
+    be_u32 bssSize;       // file fields (big-endian); prolog / epilog / unresolved below are
+    be_u32 relOffset;     // rewritten by the port's OSLink with the built-in module's addresses
+    be_u32 impOffset;
+    be_u32 impSize;
+#endif
     u8 prologSection;     // section # for prolog function
     u8 epilogSection;     // section # for epilog function
     u8 unresolvedSection; // section # for unresolved function
@@ -67,7 +86,7 @@ struct OSModuleHeader {
 #endif
 };
 
-#define OSGetSectionInfo(module) ((OSSectionInfo*)(((OSModuleInfo*)(module))->sectionInfoOffset))
+#define OSGetSectionInfo(module) ((OSSectionInfo*) (u32) (((OSModuleInfo*) (module))->sectionInfoOffset))
 
 struct OSSectionInfo {
     u32 offset;

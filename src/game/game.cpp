@@ -73,6 +73,11 @@
 #include "eff_sys.h"
 #include "etc_model.h"
 #include "light_area.h"
+#ifdef RE4_PORT
+extern "C" void port_heap_check(const char* stage);  // main.cpp: the port's search of a heap corruption
+#else
+#define port_heap_check(stage)
+#endif
 
 // game/read.cpp (C++ linkage)
 void* GetDataExt(void* arc, const char* tag, int no);
@@ -230,6 +235,16 @@ void GameTask()
         gameDebug();
         GetGameTime(&h, &m, &s);
         eprintf(20, 16, 7, 0, "%d:%02d:%02d %08X", h, m, s, Joy[0].on);
+#ifdef RE4_PORT
+        {   // the game step timeline in the log
+            static u32 last = 0xFFFFFFFF;
+            u32 now = ((u32) pG->Rno0 << 24) | ((u32) pG->Rno1 << 16) | ((u32) pG->Rno2 << 8) | pG->Rno3;
+            if (now != last) {
+                OSReport("[port] game step %d.%d.%d.%d (room %03x)\n", pG->Rno0, pG->Rno1, pG->Rno2, pG->Rno3, pG->room_id);
+                last = now;
+            }
+        }
+#endif
         game_func_tbl[pG->Rno0]();
         TaskSleep(1);
     }
@@ -359,6 +374,11 @@ void gameStageInit()
 // scroll objects, LIT lights, SHD shadows, EFF effects, EAR/SAR areas, TEX/ITM/ETM models, CAM,
 // BLK, EVS, FSE, AEV/ITA scenario collision), the room SST effects, BGM, then the fade-in and
 // Rno0 = 3.
+#ifdef RE4_PORT
+#define RI_CHK(label) OSReport("[port] gameRoomInit: after %s (heap check %d)\n", label, OSCheckHeap(Heap[MemGetCurrentHeap()].handle))  // progress marks in the log, with the game heap's consistency
+#else
+#define RI_CHK(label)
+#endif
 void gameRoomInit()
 {
     int n;
@@ -378,8 +398,11 @@ void gameRoomInit()
     }
     DbgFlagOn(pG, DBG_WIND_ON);
     ReadPlayerData(pG->pl_type, pG->pl_costume);
+    RI_CHK("ReadPlayerData");
     ReadAreaData();
+    RI_CHK("ReadAreaData");
     DC.initDataUnit();
+    RI_CHK("DC.initDataUnit");
     ActBtn.init();
     ConsInitRoom((ConsRoom*) GetDataExt(pG->pRoom, "CNS", 0));
     {
@@ -387,6 +410,7 @@ void gameRoomInit()
         cSmx* smx = (cSmx*) GetDataExt(pG->pRoom, "SMX", 0);
         SmdInit(smd, smx, (cSmd*) GetDataExt(pG->pRoom, "SMD", 1));
     }
+    RI_CHK("SmdInit");
     ModInfoMgr.roomInit();
     n = ConsGetRoomValue(CONS_R_NMODELINFO) + SmdGetObjNum();
     if (DbgFlagChk(pG, DBG_APP_USE_DBMEM)) {
@@ -465,16 +489,20 @@ void gameRoomInit()
         EatMgr.registEffInfo(EAT_ET_ROOM3, (AtEffInfo*) &effInfoNormal);
     }
     SceAtInit(GetDataExt(pG->pRoom, "AEV", 0), GetDataExt(pG->pRoom, "ITA", 0));
+    RI_CHK("SceAtInit");
     EvtMgr.roomInit();
     EvtMgr.arrayAlloc(2);
     EvtMgr.myRoomInit();
+    RI_CHK("EvtMgr.myRoomInit");
     EvtDebug.myRoomInit();
     if (!SysFlagChk(pG, SYS_DOORDEMO)) {
         EmMgr.create(0, 0);
         PlRegistRoomEff((PlRoomEff*) effRoom);
     }
     SmdSetup(-1);
+    RI_CHK("SmdSetup");
     ShdInit((ShdHeader*) GetDataExt(pG->pRoom, "SHD", 0));
+    RI_CHK("ShdInit");
     if ((p = GetDataExt(pG->pRoom, "EFF", 0)) != 0) {
         EspDataLoad((u32) p, EFF_ROOM, 0);
     }
@@ -494,6 +522,7 @@ void gameRoomInit()
         EtcModelDataLoad(p);
     }
     ClothRoomInit();
+    RI_CHK("ClothRoomInit");
     if ((p = GetDataExt(pG->pRoom, "ETS", 0)) != 0) {
         EtcModelListSet((EtcList*) p);
     }
@@ -501,6 +530,7 @@ void gameRoomInit()
     FlrAtInit();
     SeAtInit();
     CameraRoomInit();
+    RI_CHK("CameraRoomInit");
     p = GetDataExt(pG->pRoom, "CAM", 0);
     if (p != 0) {
         CamCtrl.RoomDataRead((CameraDataHeader*) p);
@@ -508,6 +538,7 @@ void gameRoomInit()
         pG->pCamRoom = p;
     }
     CamCtrl.CoreDataRead((CameraDataHeader*) (pG->pCore->ofs_30 + (u32) pG->pCore));
+    RI_CHK("CamCtrl.CoreDataRead");
     CamCtrl.roomInit();
     View.roomInit();
     p = GetDataExt(pG->pRoom, "BLK", 0);
@@ -562,6 +593,7 @@ void gameRoomInit()
     SubScreenWait(15);
     SysFlagOff(pG, SYS_TRANS_STOP);
     DC.m_nblock_read_stop = 0;
+    RI_CHK("end");
     pG->Rno0 = 3;
     pG->SaveKind = 0;
 }
@@ -573,6 +605,7 @@ void gameRoomInit()
 // button opens the option screen (Rno0 = 6) when OptionOpenCheck allows.
 void gameMainLoop()
 {
+    port_heap_check("gameMainLoop entry");
     static int other_slow = 3;
     static int preb_slow_flg = 1;
     static f32 player_Seq_speed = 0.6f;
@@ -588,12 +621,14 @@ void gameMainLoop()
     pG->quake_ofs.z = 0.0f;
     gameDiedemoCheck();
     ProcessTickGet(5, "CamCtrl.Check()");
+    port_heap_check("CamCtrl.Check()");
     SceAtCheck();
     ActBtn.move();
     if (!SpfFlagChk(pG, SPF_SCE)) {
         ScenarioMove();
     }
     ProcessTickGet(5, "ScenarioMove");
+    port_heap_check("ScenarioMove");
     if (StaFlagChk(pG, STA_SLOW)) {
         pPL->setSlow(player_Seq_speed);
         preb_slow_flg = 1;
@@ -613,12 +648,14 @@ void gameMainLoop()
         EmListWaitDelete();
         StaFlagOff(pG, STA_SE_BURST);
         ProcessTickGet(5, "EmMgr.move");
+        port_heap_check("EmMgr.move");
     }
     if (!SpfFlagChk(pG, SPF_PL) && (pPL->be_flag & 0x20) &&
         (!StaFlagChk(pG, STA_SUSPEND) || (pPL->be_flag & 0x800))) {
         pPL->move();
     }
     ProcessTickGet(5, "Player");
+    port_heap_check("Player");
     if (StaFlagChk(pG, STA_SLOW)) {
         slow = (pG->Frame_cnt % other_slow) == 0;
     } else {
@@ -630,12 +667,14 @@ void gameMainLoop()
             ObjMgr.move();
         }
         ProcessTickGet(5, "ObjMgr.move");
+        port_heap_check("ObjMgr.move");
         if (!SpfFlagChk(pG, SPF_CTRL)) {
             CtrlMgr.move();
         }
     }
     CameraMove();
     ProcessTickGet(5, "CameraMove");
+    port_heap_check("CameraMove");
     if (StaFlagChk(pG, STA_SLOW)) {
         slow = (pG->Frame_cnt % other_slow) == 0;
     } else {
@@ -651,10 +690,12 @@ void gameMainLoop()
             EffCallToolStateCallBack();
         }
         ProcessTickGet(5, "EspMove");
+        port_heap_check("EspMove");
         if (!SpfFlagChk(pG, SPF_LIGHT)) {
             LightMgr.move();
         }
         ProcessTickGet(5, "LightMove");
+        port_heap_check("LightMove");
         DmgMgr.move();
         SatMgr.dieCheck();
         EatMgr.dieCheck();
@@ -739,6 +780,7 @@ void gameMainLoop()
     if (SysFlagChk(pG, SYS_PUBLICITY_VER) || pG->debug_mode == 0) {
         DbgFlagOff(pG, DBG_FOG_FAR_GREEN);
     }
+    port_heap_check("gameMainLoop end");
 }
 
 // Loads pSaveData into the game (cGameSave::load) and sets the continue-from-save state: pl_flag 1,

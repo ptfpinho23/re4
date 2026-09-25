@@ -179,7 +179,7 @@ void SstSet(u32 owner, int blk_no, ESP_CORE_KIND kind, int start_id, int end_id,
     cEspSystem* sys = g_pEspSys;
     SstTbl* tbl;
     SstList* list;
-    u32* ofs;
+    be_u32* ofs;  // SstData::ofs
     u32 i;
 
     if (owner > EFF_NONE) {

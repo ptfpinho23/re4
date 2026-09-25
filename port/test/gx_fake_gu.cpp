@@ -25,9 +25,12 @@ void pg_fog(int e, float n, float f, unsigned int c) { printf("FOG %d %g %g %06x
 void pg_texture_off(void) { lastTexSet = 0; }
 int pg_dump_pending(void) { return 0; }
 extern "C" void port_trace(const char* fmt, ...) { (void) fmt; }
-void pg_texture(int psm, int w, int h, const void* data, int ws, int wt, int mn, int mg, int tfx, int tcc, float su, float sv)
+static const unsigned int* lastClut;
+static int lastClutEntries;
+void pg_texture(int psm, int w, int h, const void* data, int ws, int wt, int mn, int mg, int tfx, int tcc, float su, float sv, const unsigned int* clut, int clutEntries)
 {
     lastTexData = data; lastTexPsm = psm; lastTexW = w; lastTexH = h; lastTexSet = 1;
+    lastClut = clut; lastClutEntries = clutEntries;
     printf("TEXSTATE %d %d %d %d %d %d\n", ws, wt, mn, mg, tfx, tcc);
     if (su != 1.0f || sv != 1.0f) printf("TEXSCALE %.9g %.9g\n", su, sv);
 }
@@ -42,10 +45,31 @@ void pg_draw(int prim, int count, const PgVertex* v)
     printf("DRAW %d %d\n", prim, count);
     for (int i = 0; i < count; i++) printf("V %.9g %.9g %08x %.9g %.9g %.9g\n", v[i].u, v[i].v, v[i].color, v[i].x, v[i].y, v[i].z);
     if (lastTexSet) {
-        int bytes = lastTexPsm == PG_PSM_DXT1 ? ((lastTexW + 3) / 4) * ((lastTexH + 3) / 4) * 8 : lastTexW * lastTexH * 4;
-        printf("TEX %d %d %d ", lastTexPsm, lastTexW, lastTexH);
+        // The record is what a sampler sees: indexed and 16-bit textures are expanded to 8888 here
+        // (the GE replicates the high bits into the low ones, as the GameCube did).
         const unsigned char* p = (const unsigned char*) lastTexData;
-        for (int i = 0; i < bytes; i++) printf("%02x", p[i]);
+        if (lastTexPsm == PG_PSM_DXT1) {
+            int bytes = ((lastTexW + 3) / 4) * ((lastTexH + 3) / 4) * 8;
+            printf("TEX %d %d %d ", lastTexPsm, lastTexW, lastTexH);
+            for (int i = 0; i < bytes; i++) printf("%02x", p[i]);
+        } else {
+            printf("TEX 3 %d %d ", lastTexW, lastTexH);
+            for (int i = 0; i < lastTexW * lastTexH; i++) {
+                unsigned int c;
+                switch (lastTexPsm) {
+                case PG_PSM_T4: { unsigned int idx = (p[i >> 1] >> ((i & 1) * 4)) & 15; c = lastClut ? lastClut[idx] : 0; break; }
+                case PG_PSM_T8: c = lastClut ? lastClut[p[i]] : 0; break;
+                case PG_PSM_5650: { unsigned int v = p[i * 2] | (p[i * 2 + 1] << 8), r = v & 31, g = (v >> 5) & 63, b = v >> 11;
+                    c = 0xFF000000u | ((b << 3 | b >> 2) << 16) | ((g << 2 | g >> 4) << 8) | (r << 3 | r >> 2); break; }
+                case PG_PSM_5551: { unsigned int v = p[i * 2] | (p[i * 2 + 1] << 8), r = v & 31, g = (v >> 5) & 31, b = (v >> 10) & 31, a = v >> 15;
+                    c = ((a ? 255u : 0u) << 24) | ((b << 3 | b >> 2) << 16) | ((g << 3 | g >> 2) << 8) | (r << 3 | r >> 2); break; }
+                case PG_PSM_4444: { unsigned int v = p[i * 2] | (p[i * 2 + 1] << 8), r = v & 15, g = (v >> 4) & 15, b = (v >> 8) & 15, a = v >> 12;
+                    c = ((a * 17) << 24) | ((b * 17) << 16) | ((g * 17) << 8) | (r * 17); break; }
+                default: c = ((const unsigned int*) p)[i]; break;
+                }
+                printf("%02x%02x%02x%02x", c & 255, (c >> 8) & 255, (c >> 16) & 255, c >> 24);
+            }
+        }
         printf("\n");
     } else {
         printf("NOTEX\n");

@@ -104,7 +104,11 @@ ReadModule WepReadModule __attribute__((aligned(32)));
 #define PL_DATA_ADDR ((u32) GC_ADDR(0x807EC000))
 #define WEP_DATA_ADDR ((void*) GC_ADDR(0x80904000))
 #define WEP_DATA_MAX 0x70000
+#ifndef RE4_PORT
 #define DLL_BSS_MAX 0x80
+#else
+#define DLL_BSS_MAX 0xFFFFFFFFu  // the built-in modules carry their own bss (port_modules.cpp OSLink); the REL's size is not the limit here
+#endif
 
 // Pointer store through a reference: the original reloads pG after every pG->pXxx = ... store.
 // Flag test through a reference: the flag address is materialised, and `&PlReadModule` right
@@ -444,7 +448,7 @@ int readEmData(ReadModule* m, int id, void* addr, u32 size)
         newSize = len;
     }
     if (e->dll != 0) {
-        pModule = (void*) (*(u32*) ((u8*) pArc + 4) + (u32) pArc);
+        pModule = (void*) (FILE_U32(*(u32*) ((u8*) pArc + 4)) + (u32) pArc);  // the archive's REL offset
         dataSize = (u32) pModule - (u32) pArc;
         bssSize = len - dataSize;
         if (addr == NULL && dataSize < size) {
@@ -684,7 +688,7 @@ void ReadPlayerData(int type, int costume)
     if (dll != 0) {
         ReleasePlData();
         pArc = (void*) PL_DATA_ADDR;
-        pModule = (OSModuleHeader*) (*(u32*) (data + 4) + (u32) data);
+        pModule = (OSModuleHeader*) (FILE_U32(*(u32*) (data + 4)) + (u32) data);  // the archive's REL offset
         dataSize = (u32) pModule - (u32) data;
         bssSize = size - dataSize;
         size = dataSize;
@@ -946,7 +950,7 @@ void ReadWepData(u32 no, u32 type)
         HALT();
     }
     pG->pWep = (PlArc*) info.addr[0][0];
-    pModule = (OSModuleHeader*) (*(u32*) (data + 4) + (u32) data);
+    pModule = (OSModuleHeader*) (FILE_U32(*(u32*) (data + 4)) + (u32) data);  // the archive's REL offset
     size = (u32) pModule - (u32) data;
     bssSize = total - size;
     if (!BitChk16(WepReadModule.flag, 2)) {

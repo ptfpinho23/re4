@@ -33,10 +33,17 @@ struct RoomSaveHdr {
 struct RoomSave {
     union {
         u16 id;      // 0x00  stage << 8 | room
+#ifndef RE4_PORT
         struct {
             u8 stage;  // 0x00
             u8 room;   // 0x01
         };
+#else
+        struct {     // little-endian: the halfword's high byte is the second one
+            u8 room;
+            u8 stage;
+        };
+#endif
     };
     u8 passed;  // 0x02  bit (0x80 >> n): checkPassed/setPassed
     u8 data[0xD8 - 3];

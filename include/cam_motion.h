@@ -9,7 +9,7 @@
 // Camera key-frame playback work (same layout as the front of MotionWork, 0xD0 bytes).
 struct CameraMotionWork {
     MotionData* data;   // 0x00
-    u32* keyTbl;        // 0x04
+    be_u32* keyTbl;     // 0x04  (the motion file's key offsets, relocated: big-endian on the port)
     u16 hist[4][3];     // 0x08  key history per motion parts (pos, at, roll, fovy)
     f32 maxFrame;       // 0x20
     f32 frame;          // 0x24
@@ -17,7 +17,7 @@ struct CameraMotionWork {
     u8 nParts;          // 0x30
     u8 pad_31[3];
     u8* partsNo;        // 0x34
-    u16* partsInfo;     // 0x38
+    be_u16* partsInfo;  // 0x38
     u8 pad_3C[4];
     u16 flags;          // 0x40  bit2: loop, bit3: pause
     u8 pad_42[2];

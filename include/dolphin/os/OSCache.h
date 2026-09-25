@@ -17,7 +17,9 @@ void DCTouchRange(void* addr, u32 nBytes);
 void ICInvalidateRange(void* addr, u32 nBytes);
 
 #define LC_BASE_PREFIX 0xE000
+#ifndef RE4_PORT
 #define LC_BASE (LC_BASE_PREFIX << 16)
+#endif  // the port's include/port.h maps LC_BASE to a buffer
 #define LCGetBase() ((void*)LC_BASE)
 
 void LCEnable(void);

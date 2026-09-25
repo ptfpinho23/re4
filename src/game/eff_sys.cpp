@@ -6,6 +6,10 @@
 // EspGetPathAddr, EspGetEfmAddr ...) index these tables. Also the per-room effect area states,
 // the final colour, the tool state (room thunder callbacks) and the generator pre-run loop.
 
+#ifdef RE4_PORT
+#include "port_psp.h"
+extern "C" unsigned int sceKernelGetSystemTimeLow(void);
+#endif
 #include "atari.h"
 #include "light.h"
 #include "global.h"
@@ -27,38 +31,38 @@
 #define EFF_TEXOBJ_MAX 0x1F4
 
 // Effect data file (EspDataLoad, version 0xB): byte offsets from the file start.
-struct EffIdTbl {
-    u32 num;           // 0x00
+struct EffIdTbl {      // file-resident (the effect archive): big-endian fields
+    be_u32 num;        // 0x00
     struct {
-        u16 id;        // 0x00
-        u16 x2;
-        u32 x4;
+        be_u16 id;     // 0x00
+        be_u16 x2;
+        be_u32 x4;
     } ent[1];          // 0x04
 };
 struct EffOfsTbl {
-    u32 num;           // 0x00
-    u32 ofs[1];        // 0x04 relative to the table
+    be_u32 num;        // 0x00
+    be_u32 ofs[1];     // 0x04 relative to the table
 };
 struct EffEfmEnt {
-    u32 x0;            // 0x00
-    u32 ofsModel;      // 0x04 relative to the entry
-    u32 ofsTpl;        // 0x08
-    u32 ofsMot;        // 0x0C 0 = none
-    u32 ofsX;          // 0x10 0 = none
+    be_u32 x0;         // 0x00
+    be_u32 ofsModel;   // 0x04 relative to the entry
+    be_u32 ofsTpl;     // 0x08
+    be_u32 ofsMot;     // 0x0C 0 = none
+    be_u32 ofsX;       // 0x10 0 = none
 };
-struct EffData {
-    u32 version;       // 0x00 == 0xB
-    u32 ofsTexId;      // 0x04 EffIdTbl of texture ids
-    u32 ofsEstList;    // 0x08
-    u32 ofsSstList;    // 0x0C
-    u32 ofsPathList;   // 0x10
-    u32 ofsEfmId;      // 0x14 EffIdTbl of effect model ids
-    u32 ofsTpl;        // 0x18 EffOfsTbl of TPLs
-    u32 ofsAnm;        // 0x1C EffOfsTbl of texture animations
-    u32 ofsEstData;    // 0x20
-    u32 ofsSstData;    // 0x24
-    u32 ofsPathData;   // 0x28
-    u32 ofsEfm;        // 0x2C EffOfsTbl of EffEfmEnt
+struct EffData {       // file-resident: big-endian fields
+    be_u32 version;    // 0x00 == 0xB
+    be_u32 ofsTexId;   // 0x04 EffIdTbl of texture ids
+    be_u32 ofsEstList; // 0x08
+    be_u32 ofsSstList; // 0x0C
+    be_u32 ofsPathList;// 0x10
+    be_u32 ofsEfmId;   // 0x14 EffIdTbl of effect model ids
+    be_u32 ofsTpl;     // 0x18 EffOfsTbl of TPLs
+    be_u32 ofsAnm;     // 0x1C EffOfsTbl of texture animations
+    be_u32 ofsEstData; // 0x20
+    be_u32 ofsSstData; // 0x24
+    be_u32 ofsPathData;// 0x28
+    be_u32 ofsEfm;     // 0x2C EffOfsTbl of EffEfmEnt
 };
 
 extern "C" {
@@ -660,7 +664,7 @@ EspSeqData* EspGetEstAddr(u32 owner, int id, int NoErrDisp)
     cEspSystem* sys = g_pEspSys;
     SstTbl* t;
     SstList* list;
-    u32* ofs;
+    be_u32* ofs;  // SstData::ofs
     int no;
     u32 i;
 
@@ -707,7 +711,7 @@ void* EspGetPathAddr(u32 owner, int id)
     cEspSystem* sys = g_pEspSys;
     SstTbl* t;
     SstList* list;
-    u32* ofs;
+    be_u32* ofs;  // SstData::ofs
     int no;
     u32 i;
 
@@ -1007,10 +1011,28 @@ void EspGenLoopMove()
     if (g_nLoop > 0x400) {
         g_nLoop = 0x400;
     }
+#ifdef RE4_PORT
+    // The pre-run of a whole room's ambient effects (the village asks for 1024 frames) takes
+    // minutes on this CPU: settle them less. Revisit when the effect update is faster.
+    if (g_nLoop > 0x40) {
+        g_nLoop = 0x40;
+    }
+#endif
     for (i = 0; i < g_nLoop; i++) {
+#ifdef RE4_PORT
+        unsigned int t0 = sceKernelGetSystemTimeLow();
+        EspgenMove();
+        unsigned int t1 = sceKernelGetSystemTimeLow();
+        int r = EspMove();
+        unsigned int t2 = sceKernelGetSystemTimeLow();
+        LightMgr.move();
+        unsigned int t3 = sceKernelGetSystemTimeLow();
+        if (t3 - t0 > 20000) port_trace("[port] EspGenLoopMove %u/%u: gen %u us, esp %u us (%d), light %u us\n", i, g_nLoop, t1 - t0, t2 - t1, r, t3 - t2);
+#else
         EspgenMove();
         EspMove();
         LightMgr.move();
+#endif
     }
     g_nLoop = 0;
 }

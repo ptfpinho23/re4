@@ -29,3 +29,26 @@ extern "C" TEXDescriptor* TEXGet(TEXPalette* pal, u32 id)
 {
     return &pal->descriptorArray[id];
 }
+
+// An exit that would otherwise be silent (a PSP has no stderr to read): newlib's assert handler.
+#include <assert.h>
+#include <pspkernel.h>
+extern "C" void port_log(const char* fmt, ...);
+extern "C" void __assert_func(const char* file, int line, const char* func, const char* expr)
+{
+    port_log("[port] assertion failed: %s (%s:%d %s)\n", expr, file, line, func ? func : "");
+    for (;;) sceKernelDelayThread(1000000);
+}
+
+// The other silent exits: abort() (newlib's, on assert / a pure virtual call / std::terminate)
+// and a pure virtual call itself. Both name their caller in the log and stop the thread.
+extern "C" void abort(void)
+{
+    port_log("[port] abort() from %p\n", __builtin_return_address(0));
+    for (;;) sceKernelDelayThread(1000000);
+}
+extern "C" void __cxa_pure_virtual(void)
+{
+    port_log("[port] pure virtual call from %p\n", __builtin_return_address(0));
+    for (;;) sceKernelDelayThread(1000000);
+}

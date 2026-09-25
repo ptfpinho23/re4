@@ -16,7 +16,7 @@
 CameraMotion::CameraMotion(void* data, int hokan, int flags, f32 frame)
 {
     CameraMotionWork* w = &m_info;
-    u32* tbl;
+    be_u32* tbl;
     int i;
 
     memclr_asm(w, sizeof(CameraMotionWork));
@@ -24,12 +24,12 @@ CameraMotion::CameraMotion(void* data, int hokan, int flags, f32 frame)
     w->maxFrame = (f32) (((MotionData*) data)->maxFrame & 0x3FFF);
     w->maxFrame += 1.0f;
     w->nParts = w->data->nParts;
-    w->partsInfo = (u16*) ((u8*) w->data + 3);
+    w->partsInfo = (be_u16*) ((u8*) w->data + 3);
     w->partsNo = (u8*) w->data + (w->nParts * 2 + 3);
-    tbl = (u32*) ((u32) w->partsNo + w->nParts);
-    tbl = (u32*) (((u32) tbl + 3) & ~3);
+    tbl = (be_u32*) ((u32) w->partsNo + w->nParts);
+    tbl = (be_u32*) (((u32) tbl + 3) & ~3);
     tbl++;
-    if ((s32) tbl[0] >= 0) {
+    if (NOT_RELOCATED(tbl[0])) {
         for (i = 0; i < w->nParts; i++) {
             tbl[i] += (u32) w->data;
         }
@@ -71,7 +71,7 @@ void CameraMotion::move()
     pp->flags = 2;
     for (i = 0; i < w->nParts; i++) {
         pp->type = w->partsInfo[i] >> 12;
-        pp->key = (u8*) w->keyTbl[i];
+        pp->key = (u8*) (u32) w->keyTbl[i];
         switch (w->partsNo[i]) {
         case 0:
             HermiteInterpolation(pp, &pos, w->hist[i]);

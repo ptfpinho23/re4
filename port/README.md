@@ -8,6 +8,32 @@ identical to the GameCube discs) is not touched: every accommodation the port ne
 `tools/port/linecheck.py` proves no `__LINE__` value moved (the assert strings are part of the
 bytes).
 
+## Setup (Linux)
+
+```sh
+# toolchain: the pspdev release (psp-gcc 15, newlib, pspsdk); cmake / ninja from pip if the distro lacks them
+mkdir -p ~/pspdev && curl -L https://github.com/pspdev/pspdev/releases/latest/download/pspdev-ubuntu-latest-x86_64.tar.gz | tar xz -C ~/pspdev
+python3 -m venv ~/pspdev/venv && ~/pspdev/venv/bin/pip install cmake ninja websockets pillow
+export PSPDEV=$HOME/pspdev/pspdev PATH=$PSPDEV/bin:$HOME/pspdev/venv/bin:$PATH
+# emulator: the distro's ppsspp package (PPSSPPSDL and PPSSPPHeadless)
+```
+
+Testing on Linux goes through `tools/port/ppsspp.py`, which boots the EBOOT in PPSSPPHeadless
+(memory stick folder `~/.ppsspp`) and drives it through the emulator's WebSocket debugger:
+
+```sh
+python tools/port/ppsspp.py -t 300 wait 30 hold cross 1 wait 20 shot title.png      # boot, press, screenshot
+python tools/port/ppsspp.py -j wait 60 where peek '*pG' 0x40                        # JIT; thread PCs; memory
+python tools/port/ppsspp.py wait 5 break _Z9titleExitP9TitleWork waitbreak 60 regs  # breakpoints, registers
+FULLLOG=1 ... # the emulator's full HLE log in build/port/headless.log (needed for `shot`, which reads
+              # the display buffer out of VRAM: the software renderer is used for that)
+```
+
+`tools/port/sym.py ADDR...` maps PCs to functions through `build/port/re4.nm` (`psp-nm -n
+build/port/re4`). Writing a path into `dumpPath` (`poke _ZL8dumpPath ms0:/PSP/GAME/RE4/f.raw`) makes
+the GX layer save the next frame and trace every draw of it (`[draw]` lines: vertices, matrices, TEV
+stages, texture) into the log. `port/run-headless.sh` is the plain boot-and-print variant.
+
 ## Setup (macOS)
 
 ```sh
@@ -194,3 +220,76 @@ sequenced BGM stays silent), the aux reverb / chorus sends, the low-pass filter,
 envelope.
 
 Not yet: multi-stage TEV / indirect textures, the MIDI synthesiser, movie decoding.
+
+## State (2026-09-24): retail data, the title screen and the first room
+
+Run on Linux against the retail discs (`Resident Evil 4 (USA)`, disc 1 + 2, G4BE08 like the
+debug build; their data formats have matched the debug code so far). With the retail data the
+game boots, passes the memory-card check (an empty card: the "create system file" prompt is
+answered with cross), plays the warning / Dolby / logo screens, renders the title screen (the
+artwork, the "4" logo, START / LOAD / OPTIONS, the copyright line), the load-game typewriter
+screen, the debug room-select menu of this build, and enters the first room (r120): the stage
+overlay `rel/st1_0.rel` links, the player archive and `st1/r120.das` load, and the room's own
+loaders start to run. Fixed on the way (all behind RE4_PORT or in the port layer):
+
+- File headers the DVD layer reads in front of every multi-part file (`DvdHeader`), the sub-screen
+  archive table (`CardArc`), the sound block ISS offset, the REL header (`OSModuleInfo` /
+  `OSModuleHeader`: id, sizes) and the enemy archives' embedded REL offset, the room-jump table
+  (`CRoomInfo`, `cRoomJmp`), the effect archive tables (`EffData`, `EffIdTbl`, `EffOfsTbl`,
+  `EffEfmEnt`, `SstList`, `SstData`) are big-endian now; the room collision (SAT) files are
+  byte-swapped in place once at binding (`port_fix_sat`).
+- Two layout assumptions of GCC 2.95: `MessageControl`'s slot accessor computed `this + 4`
+  (the vptr came last there, first here: `getMes` / `MES` use `m_Msg`), and the halfword-over-
+  bytes unions `room_id` / `stage_no` / `room_no` (`GlobalWork`, `RoomSave`, `RoomNo_next`,
+  `room_id_prev`) keep stage in the high byte: the byte order of those unions is swapped for the
+  port, `G_ROOM_ID` / `G_ROOM_ID_PREV` read the halfword.
+- The GX layer: texture coordinate generation (`GXSetTexCoordGen`: position / normal sources,
+  3x4 matrices with the q divide, post matrices, per-vertex texture matrix indices), textures
+  padded or halved to the GE's power-of-two sizes up to 512 (`fitTexture`; framebuffer copies
+  are resampled straight to that size), TLUTs copied at `GXLoadTlut` (the game builds the
+  object on the stack), the texture cache keeps its conversions across `GXInvalidateTexAll` and
+  re-checks a content signature instead (its victim search also always preferred slot 0), a
+  3 MB vertex ring instead of `sceGuGetMemory` (a room's geometry overflowed the 512 KB list),
+  `TEXGet`, texture objects with garbage sizes / addresses are refused (they crashed the
+  emulator's software renderer).
+- The scheduler on PSP threads: a background (ISR) task's thread blocks in disc reads, so the
+  main thread waits while such a task is `TASK_RUN` (`TaskSchedulerMain`), `TaskKill` cancels a
+  task killed from another thread instead of exiting the caller, the DVD read holds no lock
+  across the read (a killed reader left it taken), the hang detector (`haltExecCheck`) is off.
+- Retail has no `etc/moji8.tpl` (the debug text font) and no `debug/roomInfo.dat` (the
+  room-jump table): `gamedata.py synthesize` writes both (an 8x16 console font; one jump point
+  per room found under `stN/`).
+
+Later the same day the first room came up: r120 loads completely (its model info manager, room
+headers, effect data, SAT block tree, blend tables, shadow and scroll headers converted), the
+game loop runs, and the opening cutscene (the police car, Leon in the back seat) renders in 3D
+with textures. Fixed on the way:
+
+- The sofdec movie player parks 5 MB of ARAM beyond the port's 8 MB ARAM buffer: skipped, the
+  movie player is a stub anyway.
+- The display list and the vertex ring are finished mid-frame when nearly full (`listRoomCheck`,
+  `pg_get_memory`): a room frame's draws did not fit the 512 KB list, and the overrun corrupted
+  libpspgu's list state (the GE interrupt handler then jumped to a vertex-format word, seen in
+  the emulator's log as `CPU Jump: Invalid exec address 1200019f`).
+- The camera cut's Hermite export (`CameraControl::HermiteExport`) writes the camera motion in
+  the motion file's byte order (big-endian) since the motion key reader expects file data, and
+  `CameraMotion` reads its header through the be_ types: the cutscene camera was NaN before,
+  which dropped every draw of the room.
+- `ppsspp.py` deletes the port's log before each run (the emulator ignores `PSP_O_TRUNC`) and
+  the `[ge]` stats line is followed by a per-phase time line (vertex transform, draw state,
+  draw issue, GE wait).
+
+Where the time goes (emulated PSP time, i.e. what the real machine would see): the cutscene
+frame is ~330 ms, of which ~320 ms is the CPU vertex assembly (`drawVertices`: the generic
+attribute parser, per-vertex lighting and texgen, ~3000 instructions per vertex at 33k vertices
+per frame). The path to a playable frame rate is hardware T&L: `GU_TRANSFORM_3D` with the GE's
+model / view / projection matrices and lights, and the models' vertex arrays converted once at
+load to a native GE vertex format (the disc's display lists reference indexed arrays, which
+the GE can consume directly as 16-bit indexed vertices).
+
+Open: skinned models show a few black triangles (Leon's face), "::destroy() ERROR, INVALID"
+on the debug console, START during the cutscene (the event skip fast-forward) ends the
+emulator; the synthesized debug font draws with the wrong glyphs (the glyph index mapping);
+the debug menu of this build has to be dismissed with cross; thin strips at the screen edges on
+2D screens; the movie player and the sound synthesis are stubs.
+

@@ -80,13 +80,13 @@ def make_texture(fmt, w, h, rnd, tlut_fmt=None):
         for i in range(0, len(order), 2):
             a, b = rnd.randrange(16), rnd.randrange(16)
             data.append(a << 4 | b)
-            px[order[i]] = (e4(a),) * 3 + (255,)
-            px[order[i + 1]] = (e4(b),) * 3 + (255,)
+            px[order[i]] = (e4(a),) * 4     # I4 / I8: the intensity goes to alpha too (GX_TF_I*)
+            px[order[i + 1]] = (e4(b),) * 4
     elif fmt == 1:  # I8
         for xy in tiled(w, h, 8, 4, 1):
             v = rnd.randrange(256)
             data.append(v)
-            px[xy] = (v, v, v, 255)
+            px[xy] = (v, v, v, v)
     elif fmt == 2:  # IA4
         for xy in tiled(w, h, 8, 4, 1):
             a, l = rnd.randrange(16), rnd.randrange(16)

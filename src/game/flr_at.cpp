@@ -35,7 +35,7 @@ void FlrAtInit()
         pLog->warn(0, 0, "FlrAt DATA IS OLD VERSION");
         return;
     }
-    pFlrSys->pData = p;
+    pFlrSys->pData = PORT_FIX(port_fix_flr, p);
     pFlrSys->pList = (FlrAt*) (p + 1);
 }
 

@@ -8,9 +8,9 @@
 
 // Per-room constants: a count, a validity bitmap and the values.
 // ConsInitCore is unused in this build (only its message survives in .rodata).
-struct ConsRoom {
-    u32 num;
-    u32 bits[1];  // (num >> 5) + 1 words, followed by u32 values[num]
+struct ConsRoom {     // file-resident (the room's CONS sub-file): big-endian fields
+    be_u32 num;
+    be_u32 bits[1];   // (num >> 5) + 1 words, followed by u32 values[num]
 };
 
 static u32 ConsRoomDefault[12] = {
@@ -41,8 +41,8 @@ int ConsInitRoom(ConsRoom* p)
 u32 ConsGetRoomValue(u32 id)
 {
     ConsRoom* r = pConsRoom;
-    u32* bits;
-    u32* values;
+    be_u32* bits;
+    be_u32* values;
 
     if (r == 0) {
         return ConsRoomDefault[id];

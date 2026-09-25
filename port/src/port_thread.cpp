@@ -103,13 +103,24 @@ s32 OSResumeThread(OSThread* thread)
     } else {
         PT(thread)->started = 1;
         OSThread* arg = thread;
-        sceKernelStartThread(PT(thread)->uid, sizeof(arg), &arg);
+        int r = sceKernelStartThread(PT(thread)->uid, sizeof(arg), &arg);
+        if (r < 0) {
+            port_log("[port] OSResumeThread: sceKernelStartThread failed %08x\n", r);
+            thread->state = OS_THREAD_STATE_MORIBUND;
+        }
     }
     return prev;
 }
 
 s32 OSSuspendThread(OSThread* thread)
 {
+    if (PT(thread)->uid == sceKernelGetThreadId()) {
+        // A thread suspending itself: the PSP refuses it (and the emulator stops on it). Name the
+        // caller; the scheduler's cooperative handshake expects the parent thread here.
+        static int n;
+        if (++n <= 10) port_log("[port] OSSuspendThread(self) from %p\n", __builtin_return_address(0));
+        return 0;
+    }
     s32 prev = thread->suspend;
     thread->suspend = prev + 1;
     sceKernelSuspendThread(PT(thread)->uid);
@@ -168,6 +179,10 @@ void OSExitThread(void* val)
     sceKernelExitDeleteThread(0);
 }
 
+// A yield that lets threads of any priority run (the scheduler spins on it while a background task
+// is blocked in a disc read).
+void OSYieldThread(void) { sceKernelDelayThread(200); }
+
 void OSCancelThread(OSThread* thread)
 {
     thread->state = OS_THREAD_STATE_MORIBUND;
@@ -177,7 +192,8 @@ void OSCancelThread(OSThread* thread)
         thread->queue = NULL;
     }
     registryRemove(thread);
-    sceKernelTerminateDeleteThread(PT(thread)->uid);
+    int r = sceKernelTerminateDeleteThread(PT(thread)->uid);
+    port_trace("[port] OSCancelThread uid %08x from thread %d: %08x\n", (unsigned) PT(thread)->uid, sceKernelGetThreadId(), (unsigned) r);
 }
 
 // ---- semaphores (the PSP semaphore id lives in `count`)

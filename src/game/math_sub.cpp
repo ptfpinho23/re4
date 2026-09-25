@@ -9,6 +9,7 @@
 #include "main_mem.h"
 #include "math_sub.h"
 #include <stdio.h>
+#include <math.h>
 #include <string.h>
 
 
@@ -857,6 +858,12 @@ f32 LIMIT_ANGLE(f32 x)
         : "f"(min), "f"(max), "f"(step)
         : "cr0");
 #else
+    // A far-out angle (garbage data, an accumulated sweep) would take millions of steps, and above
+    // 2^24 the subtraction no longer changes the value: reduce it in one go first.
+    if (x >= 64.0f * PI || x <= -64.0f * PI || !(x == x)) {
+        if (!(x == x)) return 0.0f;
+        x = fmodf(x, step);
+    }
     if (x >= max) {
         do {
             x -= step;
