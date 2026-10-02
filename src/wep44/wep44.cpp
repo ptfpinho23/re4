@@ -50,7 +50,7 @@ void Wep44_init(cModel* m)
 // ObjInitFunc[0x31]: placement-constructs the class in the work cObjMgr::construct hands over.
 void ObjGovernment_init(cObj* obj)
 {
-    new (obj) cObjGovernment();
+    new (obj) cObjGovernment;
 }
 
 // cObjWep::init override (parent = the player): idle motions 0x34 (normal) / 0x3A (empty), weapon

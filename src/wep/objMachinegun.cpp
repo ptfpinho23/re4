@@ -21,7 +21,7 @@
 // ObjInitFunc entry: placement-constructs the class in the work cObjMgr::construct hands over.
 void ObjMachinegun_init(cObj* obj)
 {
-    new (obj) cObjMachinegun();
+    new (obj) cObjMachinegun;
 }
 
 // cObjWep::init override, called by cPlayer::weaponInit with the player as parent: loads the

@@ -33,7 +33,7 @@ const u8 fn57_tbl[3] = { 0xE, 0xC, 0xA };
 // ObjInitFunc[0x32]: placement-constructs the class in the work cObjMgr::construct hands over.
 void ObjFn57_init(cObj* obj)
 {
-    new (obj) cObjFn57();
+    new (obj) cObjFn57;
 }
 
 // cObjWep::init override (Wep01_init, parent = the player): model 0x6 / 0x7 by weapon_type

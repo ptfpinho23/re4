@@ -43,7 +43,7 @@ void Wep47_init(cModel* m)
 // ObjInitFunc[0x30]: placement-constructs the class in the work cObjMgr::construct hands over.
 static void ObjHkSniper_init(cObj* obj)
 {
-    new (obj) cObjHkSniper();
+    new (obj) cObjHkSniper;
 }
 
 // cObjWep::init override (parent = the player): model 0xA / texture 0x9 (the object is destroyed

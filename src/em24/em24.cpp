@@ -64,7 +64,7 @@ extern "C" void _unresolved()
 // EmInitFunc of the module: constructs the cEm24 class in the manager's work.
 void Em24Init(cEm* em)
 {
-    new (em) cEm24();
+    new (em) cEm24;
 }
 
 // Per-frame damage check (cEm24::move): an explosion / fire volume (kind 1/4/5/7) or any weapon hit

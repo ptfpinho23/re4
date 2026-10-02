@@ -57,13 +57,13 @@ struct SstAreaEnt {
     u8 be_flag;//  (PS2 ESP_AREA.be_flag)
     u8 area_no;            // 0x02 display flag bit set while the player stands in the area  display flag bit set while the player stands in the area (PS2 ESP_AREA.area_no)
     u8 pad02;//  (PS2 ESP_AREA.pad02)
-    u8 area[0x30];     // 0x04 AreaHitCheck data (AreaData)
-    u32 flag;         // 0x34 bit0: the area counts as "in room" (esp_app EffAreaCheckInRoom)  (PS2 ESP_AREA.flag)
+    u8 area[0x30];     // 0x04 AreaHitCheck data (AreaData; port_fix_sst_area byte-swaps it)
+    be_u32 flag;      // 0x34 bit0: the area counts as "in room" (esp_app EffAreaCheckInRoom)  (PS2 ESP_AREA.flag)
     u8 pad_38[0x98 - 0x38];
 };
 struct SstArea {   // (PS2 ESP_AREA_HEADER)
-    u32 num;           // 0x00
-    u32 ver_no;        // 0x04 (PS2 ver_no)
+    be_u32 num;        // 0x00
+    be_u32 ver_no;     // 0x04 (PS2 ver_no)
     u8 pad_8[8];
     SstAreaEnt ent[1]; // 0x10
 };

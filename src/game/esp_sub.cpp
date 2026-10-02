@@ -4,6 +4,9 @@
 // shimmer and frame-buffer ("nega") variants, and EspSeqSet, which turns one EspGenWork record
 // of an effect sequence into a live esp (or an effect model through EfmSeqSet). EspEstSetSelect
 // spawns one record of an est table directly (laser sight, gatling, ...).
+#ifdef RE4_PORT
+#include "port_psp.h"
+#endif
 #include "atari.h"
 #include "light.h"
 #include "gx.h"
@@ -159,8 +162,28 @@ void EspCommonTrans(cEsp* esp)
     if (!esp->ChannelSet()) {
         return;
     }
+#ifdef RE4_PORT
+    {
+        extern volatile unsigned int port_gx_flags;  // debugger: 0x20000 skips effect type (flags >> 24), 0x40000 draws only that type
+        unsigned int ty = port_gx_flags >> 24;
+        if ((port_gx_flags & 0x20000) && esp->m_Type == ty) return;
+        if ((port_gx_flags & 0x40000) && esp->m_Type != ty) return;
+    }
+#endif
     sx = esp->m_Size_base_x * esp->m_Size_mul;
     sy = esp->m_Size_base_y * esp->m_Size_mul;
+#ifdef RE4_PORT
+    {
+        extern volatile unsigned int port_gx_flags;
+        static int nTr;
+        if ((port_gx_flags & 256) && s_pAnm->Width == 256 && ++nTr <= 20)
+            port_trace("[port] sprite vtable %p tex %d ptn %d: size %g x %g (base %g %g mul %g plus %g) pos %g %g %g anm %dx%d c %d %d screen %d\n", *(void**) esp, esp->m_Tex_id, esp->m_Ptn_no,
+                       sx, sy, esp->m_Size_base_x, esp->m_Size_base_y, esp->m_Size_mul, esp->m_Size_plus, esp->m_Pos.x, esp->m_Pos.y, esp->m_Pos.z,
+                       (int) s_pAnm->Width, (int) s_pAnm->Height, (int) s_pAnm->Cx, (int) s_pAnm->Cy, ESP_PARTS_SCREEN(esp) ? 1 : 0);
+        if ((port_gx_flags & 256) && s_pAnm->Width == 256 && nTr <= 20)
+            port_trace("[port]   colour %d %d %d a %d, owner %d, kind flags %08x\n", esp->m_Col_r, esp->m_Col_g, esp->m_Col_b, esp->m_Col_a, esp->info.owner, (unsigned) esp->info.Core_flg);
+    }
+#endif
     if ((f32) s_pAnm->Cx == 0.0f) {
         ox = -0.5f;
     } else {

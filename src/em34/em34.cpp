@@ -71,7 +71,7 @@ extern "C" void _unresolved()
 // EmInitFunc: placement-constructs the enemy in the cEm work.
 void Em34Init(cEm* em)
 {
-    new (em) cEm34();
+    new (em) cEm34;
 }
 
 // Damage of the frame: consumes cEm::dmHit and sets dmType (1, 0x11 for the knife); hp loss by

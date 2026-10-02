@@ -242,7 +242,7 @@ void cObjRuger::setMotion(cPlayer* pl)
 // ObjInitFunc[0x21]: placement-constructs the class in the work cObjMgr::construct hands over.
 static void ObjRuger_init(cObj* obj)
 {
-    new (obj) cObjRuger();
+    new (obj) cObjRuger;
 }
 
 // REL entry: registers the weapon init / move routines and the object constructor slot.

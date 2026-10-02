@@ -76,7 +76,7 @@ extern "C" void _unresolved()
 // EmInitFunc: placement-constructs the vehicle in the cEm work.
 void Em3bInit(cEm* em)
 {
-    new (em) cEm3b();
+    new (em) cEm3b;
 }
 
 // Truck damage of the frame: consumes cEm::dmHit (grenades / flash / mines ignored); hp loss by

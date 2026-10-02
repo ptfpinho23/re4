@@ -1276,12 +1276,14 @@ void CameraControl::Move()
     camera.param = *CamSmth.getParam();
 #ifdef RE4_PORT
     {
-        static int nTr;
-        if (++nTr <= 12)
+        static int nTr, lastR0 = -1, lastArea = -99;
+        if (++nTr <= 12 || r0 != lastR0 || areaNo != lastArea)
             port_trace("[port] CamCtrl r0 %d area %d cam %d cut %p: cur %g %g %g / %g %g %g roll %g fovy %g; inter(%d) %g %g %g fovy %g; smooth(flag %x ratio %g) %g %g %g fovy %g; pl %g %g %g\n",
                        r0, areaNo, cameraNo, area_rec ? area_rec->cut : NULL, cur.pos.x, cur.pos.y, cur.pos.z, cur.at.x, cur.at.y, cur.at.z, cur.roll, cur.fovy,
                        (int) m_Inter.frame, m_Inter.param.pos.x, m_Inter.param.pos.y, m_Inter.param.pos.z, m_Inter.param.fovy,
                        (unsigned) CamSmth.m_flag, CamSmth.m_ratio, camera.param.pos.x, camera.param.pos.y, camera.param.pos.z, camera.param.fovy, pPL->pos.x, pPL->pos.y, pPL->pos.z);
+        lastR0 = r0;
+        lastArea = areaNo;
     }
 #endif
     CameraSetOrientationRoll(&camera);

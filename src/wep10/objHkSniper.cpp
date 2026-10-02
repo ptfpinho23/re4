@@ -21,7 +21,7 @@ const u8 hksniper_tbl[3] = { 0x14, 0xA, 0 };
 // ObjInitFunc[0x30]: placement-constructs the class in the work cObjMgr::construct hands over.
 void ObjHkSniper_init(cObj* obj)
 {
-    new (obj) cObjHkSniper();
+    new (obj) cObjHkSniper;
 }
 
 // cObjWep::init override (Wep10_init, parent = the player): model 0xA / texture 0x9 (the object

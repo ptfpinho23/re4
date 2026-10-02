@@ -92,7 +92,7 @@ extern "C" void _unresolved()
 // by em3c_R0_Init on the first move).
 void Em3cInit(cEm* em)
 {
-    new (em) cEm3c();
+    new (em) cEm3c;
 }
 
 // Per-frame damage reaction, run from move() once the enemy is past init. Consumes the hit the

@@ -161,7 +161,7 @@ extern "C" void _unresolved()
 // EmInitFunc: placement-constructs the boat in the cEm work.
 void Pl0fInit(cEm* em)
 {
-    new (em) cPl0f();
+    new (em) cPl0f;
 }
 
 // Per-frame update (emMove): clears the no-crash / no-drop flags, runs the r_no_0 routine, the

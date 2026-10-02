@@ -33,6 +33,7 @@ struct PgVertex {
 #define PG_PSM_T4 4      // 4-bit indexed, a 16-entry 8888 CLUT (texel 0 in the low nibble)
 #define PG_PSM_T8 5      // 8-bit indexed, a 256-entry 8888 CLUT
 #define PG_PSM_DXT1 8
+#define PG_PSM_DXT3 9    // DXT1 colours (8 bytes) then sixteen 4-bit alphas (8 bytes) per 4x4 block
 
 // texture functions (sceGu numbering)
 #define PG_TFX_MODULATE 0
@@ -79,10 +80,48 @@ void pg_cull(int enable, int frontCW);
 void pg_pixel_mask(unsigned int mask);
 void pg_fog(int enable, float nearz, float farz, unsigned int color);
 void pg_texture_off(void);
+void pg_texture_forget(void);  // texels / palette behind a bound pointer changed
 // tcc 1: the texture alpha counts; su, sv scale the UVs; clut: the 8888 palette of a T4 / T8 texture
 void pg_texture(int psm, int w, int h, const void* data, int wrapS, int wrapT, int minFilt, int magFilt, int tfx, int tcc, float su, float sv, const unsigned int* clut, int clutEntries);
 void pg_projection(const float* m16);  // 16 floats, row-major (GameCube Mtx44)
 void pg_draw(int prim, int count, const PgVertex* verts);
+
+// A draw whose vertices are still in the model's space: the GE applies the model(-view) matrix,
+// lights the vertices and scales / maps the texture coordinates. The vertex layout is the GE's
+// (texture f32 x 2, colour 8888, normal, position), described by `vtype` (the GE's vertex type
+// bits: PG_VT_*).
+#define PG_VT_TEX_F32 3u
+#define PG_VT_COLOR_8888 (7u << 2)
+#define PG_VT_NRM_S8 (1u << 5)
+#define PG_VT_NRM_S16 (2u << 5)
+#define PG_VT_NRM_F32 (3u << 5)
+#define PG_VT_POS_S8 (1u << 7)
+#define PG_VT_POS_S16 (2u << 7)
+#define PG_VT_POS_F32 (3u << 7)
+struct PgNativeLight {
+    int ambientOnly;        // the light adds its colour whatever the normal (GX_DF_NONE)
+    float pos[3];           // in the space the model matrix leads to (the game's view space)
+    unsigned int color;     // ABGR
+    float att[3];           // 1 / (att0 + att1 d + att2 d^2)
+    int spot;               // a spot light: cos^exponent of the angle off its axis, nothing past the cutoff
+    float dir[3];           // the axis, from the light outwards
+    float exponent, cutoff; // (the cutoff is a cosine)
+};
+struct PgNative {
+    unsigned int vtype;
+    float model[12];        // the rows of the 3x4 matrix (the position's fixed-point scale folded in)
+    int texMatrix;          // 1: (s, t) = texMtx (u, v, 1); 0: (s, t) = (u, v) * texScale
+    float texScale[2];
+    float texMtx[6];        // a b c / d e f
+    int lit;                // the GE lights the vertices; the vertex colour is the material
+    unsigned int lightSig;  // differs when the lights / ambient below differ from the last lit draw's
+    int nLights;
+    PgNativeLight light[8];   // (four reach the GE)
+    unsigned int ambient;   // the global ambient colour (its alpha times the ambient material's is the vertex alpha)
+    int colorMaterial;      // which materials are the vertex colour: 1 ambient, 2 diffuse
+    unsigned int material;  // the material colour where it is not the vertex colour
+};
+void pg_draw_native(int prim, int count, const void* verts, int bytes, const PgNative* n);
 void* pg_get_memory(int bytes);
 void pg_overlay_begin(void);  // targets the frame now on screen
 void pg_debug_print(int col, int row, unsigned int color, const char* text);
@@ -94,7 +133,8 @@ void pg_wait_vblank(void);
 void pg_copy_frame(unsigned int* dst, int dstW, int dstH, int srcX, int srcY, int srcW, int srcH, int mode);
 // Writes the frame on screen as raw 480x272 ABGR8888 to a file (a screenshot without a host).
 int pg_save_frame(const char* path);
-void pg_request_dump(const char* path);  // saves the next finished frame (the list's own draw buffer)
+void pg_request_dump(const char* path);
+void pg_save_raw(const char* path, const void* buf, unsigned int bytes);  // saves the next finished frame (the list's own draw buffer)
 int pg_dump_pending(void);               // 1 between pg_request_dump and the dump (port_gx traces the draws)
 
 #ifdef __cplusplus

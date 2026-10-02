@@ -273,7 +273,7 @@ extern "C" void _unresolved()
 // EmInitFunc of the module: constructs the cEm2c class in the manager's work.
 void Em2cInit(cEm* em)
 {
-    new (em) cEm2c();
+    new (em) cEm2c;
 }
 
 // Damage reaction after a hit while alive (em2cDmCk): by the state flags, then by the weapon.

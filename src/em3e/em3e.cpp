@@ -40,7 +40,7 @@ static void emmark_none(cEmMark* em);
 // EmInitFunc: placement-constructs a target in the cEm work.
 void em3eInit(cEm* em)
 {
-    new (em) cEmMark();
+    new (em) cEmMark;
 }
 
 // Constructor: targets cannot be locked on.

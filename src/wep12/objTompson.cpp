@@ -18,7 +18,7 @@
 // ObjInitFunc[0x25]: placement-constructs the class in the work cObjMgr::construct hands over.
 void ObjTompson_init(cObj* obj)
 {
-    new (obj) cObjTompson();
+    new (obj) cObjTompson;
 }
 
 // cObjWep::init override (equipWeapon, parent = the player): model 0x6 / texture 0x5, atari

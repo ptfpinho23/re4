@@ -163,9 +163,12 @@ def dxt_decode(c0, c1, idx_rows):
 
 
 def make_cmpr(w, h, rnd):
-    """(gc bytes, expected 16-texel decodes per 4x4 block in row-major block order)"""
+    """(gc bytes, expected 16-texel decodes per 4x4 block in row-major block order, and per block
+    the texel positions whose colour the GE only approximates: index 2 of a three-colour block,
+    which the port re-encodes as DXT3 in the four-colour mode)"""
     bw, bh = w // 4, h // 4
     blocks = {}
+    loose = {}
     data = bytearray()
     for ty in range(h // 8):
         for tx in range(w // 8):
@@ -177,8 +180,10 @@ def make_cmpr(w, h, rnd):
                 for row in rows:
                     data.append((row[0] << 6) | (row[1] << 4) | (row[2] << 2) | row[3])
                 blocks[(bx, by)] = dxt_decode(c0, c1, rows)
+                loose[(bx, by)] = [c0 <= c1 and i == 2 for row in rows for i in row]
     expected = [blocks[(bx, by)] for by in range(bh) for bx in range(bw)]
-    return bytes(data), expected
+    approx = [loose[(bx, by)] for by in range(bh) for bx in range(bw)]
+    return bytes(data), expected, approx
 
 
 def psp_dxt1_decode(block8):
@@ -186,6 +191,22 @@ def psp_dxt1_decode(block8):
     rows = [[(block8[i] >> (2 * k)) & 3 for k in range(4)] for i in range(4)]
     c0, c1 = struct.unpack("<HH", block8[4:8])
     return dxt_decode(c0, c1, rows)
+
+
+def psp_dxt3_decode(block16):
+    """A GE DXT3 block: the DXT1 colour block (always read in the four-colour mode), then four
+    16-bit rows of 4-bit alphas (texel 0 in the low nibble)."""
+    rows = [[(block16[i] >> (2 * k)) & 3 for k in range(4)] for i in range(4)]
+    c0, c1 = struct.unpack("<HH", block16[4:8])
+    p0, p1 = tuple(rgb565(c0))[:3], tuple(rgb565(c1))[:3]
+    pal = [p0, p1, tuple((2 * a + b) // 3 for a, b in zip(p0, p1)), tuple((a + 2 * b) // 3 for a, b in zip(p0, p1))]
+    out = []
+    for y in range(4):
+        line = block16[8 + y * 2] | (block16[9 + y * 2] << 8)
+        for x in range(4):
+            a = ((line >> (x * 4)) & 15) * 17
+            out.append(pal[rows[y][x]] + (a,))
+    return out
 
 
 # ---- running the harness
@@ -244,16 +265,31 @@ def test_textures(rnd):
             check(got == pixels, f"{name} tlut {tlut_fmt}: pixels differ")
             print(f"  {name:7s} tlut {tlut_fmt} ok")
     for (w, h) in [(8, 8), (16, 16), (32, 8)]:
-        data, expected = make_cmpr(w, h, rnd)
+        data, expected, approx = make_cmpr(w, h, rnd)
         script = point_setup() + f"texobj 14 {w} {h} {data.hex()}\nbegin 184 0 1\nputf 1\nputf 2\nputf 3\n"
         draws = parse_draws(run(script))
         psm, tw, th, out = draws[0][2]
-        check(psm == 8, "CMPR: not DXT1")
         nb = (w // 4) * (h // 4)
-        got = [psp_dxt1_decode(out[8 * k:8 * k + 8]) for k in range(nb)]
-        bad = [k for k in range(nb) if got[k] != expected[k]]
-        check(got == expected, f"CMPR {w}x{h}: block decode differs at blocks {bad[:4]}")
-        print(f"  CMPR    {w}x{h} ok")
+        three = any(any(a) for a in approx) or any(t[3] == 0 for blk in expected for t in blk)
+        check(psm == (9 if three else 8), f"CMPR: psm {psm}, expected {'DXT3' if three else 'DXT1'}")
+        if psm == 8:
+            got = [psp_dxt1_decode(out[8 * k:8 * k + 8]) for k in range(nb)]
+        else:
+            got = [psp_dxt3_decode(out[16 * k:16 * k + 16]) for k in range(nb)]
+        bad = []
+        for k in range(nb):
+            for i in range(16):
+                g, e = got[k][i], expected[k][i]
+                if e[3] == 0:
+                    ok = g[3] == 0          # a transparent texel: only its alpha matters
+                elif approx[k][i]:
+                    ok = g[3] == e[3]       # the approximated colour slot: only its alpha is exact
+                else:
+                    ok = g == e
+                if not ok:
+                    bad.append((k, i, g, e))
+        check(not bad, f"CMPR {w}x{h}: texels differ: {bad[:3]}")
+        print(f"  CMPR    {w}x{h} ok ({'DXT3' if psm == 9 else 'DXT1'})")
 
 
 def be_s16(v): return struct.pack(">h", v)

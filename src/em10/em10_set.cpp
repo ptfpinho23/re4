@@ -40,7 +40,7 @@ extern "C" void _unresolved()
 // builds the enemy through Em10SetFunc).
 void Em10Init(cEm* em)
 {
-    new (em) cEm10();
+    new (em) cEm10;
 }
 
 // Em10SetFunc of this module: the village Ganados (Ganado class 0, stage 1): model types 0 (default; male villager, voice set 0), 1 (female, voice 1), 3 (voice 2) and 4 (the chainsaw man, voice 3). Fills the work's motion table mot[0..40] (body / head / hand

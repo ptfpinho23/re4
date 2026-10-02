@@ -159,7 +159,7 @@ extern "C" void _unresolved()
 // sets it up on the first move.
 void Em39Init(cEm* em)
 {
-    new (em) cEm39();
+    new (em) cEm39;
 }
 
 // Destroys the held weapon enemies (knife, machine gun, bow, thrown knife) and the cap object that

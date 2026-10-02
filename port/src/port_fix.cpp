@@ -44,6 +44,47 @@ extern "C" BlockHeader* port_fix_block(BlockHeader* h)
 #include "sce_at.h"
 #include "flr_at.h"
 
+#include "espgen.h"
+#include "path.h"
+
+// An effect path (path.h): u16 count, then 0x28-byte vertices with two Vec and a f32 distance.
+// The game walks it with Vec* math, so it is byte-swapped in place once (a registry, since the
+// same path is looked up every frame).
+static const void* pathFixed[1024];
+static int pathFixedCount;
+extern "C" void* port_fix_path(void* p)
+{
+    if (p == NULL) return p;
+    for (int i = 0; i < pathFixedCount; i++) {
+        if (pathFixed[i] == p) return p;
+    }
+    if (pathFixedCount < 1024) pathFixed[pathFixedCount++] = p;
+    u8* b = (u8*) p;
+    u16 n;
+    __builtin_memcpy(&n, b, 2);
+    n = (u16) __builtin_bswap16(n);
+    __builtin_memcpy(b, &n, 2);
+    for (u32 i = 0; i < n; i++) {
+        u8* v = b + 4 + i * sizeof(PathVtx);
+        for (int k = 0; k < 7; k++) {  // pos, nrm, dist
+            u32 w;
+            __builtin_memcpy(&w, v + k * 4, 4);
+            w = __builtin_bswap32(w);
+            __builtin_memcpy(v + k * 4, &w, 4);
+        }
+    }
+    return p;
+}
+
+extern "C" SstArea* port_fix_sst_area(SstArea* p)
+{
+    if (p == NULL) return p;
+    for (u32 i = 0; i < p->num; i++) {
+        swapArea((AreaData*) p->ent[i].area);
+    }
+    return p;
+}
+
 extern "C" FlrAtHead* port_fix_flr(FlrAtHead* p)
 {
     // flr_at.cpp: FlrAt records of 0x84 bytes from 0x10, each with an AreaData at +0x14 (the

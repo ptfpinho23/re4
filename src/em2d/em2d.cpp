@@ -305,7 +305,7 @@ extern "C" void _unresolved()
 // EmInitFunc of the module: constructs the cEm2d class in the manager's work.
 void Em2dInit(cEm* em)
 {
-    new (em) cEm2d();
+    new (em) cEm2d;
 }
 
 // Per-frame damage check (cEm2d::move). An explosion / fire volume takes 500 every 120 frames

@@ -64,7 +64,7 @@ extern "C" void _unresolved()
 // EmInitFunc of the module: constructs the cEm28 class in the manager's work.
 void Em28Init(cEm* em)
 {
-    new (em) cEm28();
+    new (em) cEm28;
 }
 
 // Per-frame damage check (cEm28::move): an explosion / fire volume kills the chicken (flag bit6,

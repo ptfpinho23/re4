@@ -140,7 +140,7 @@ extern "C" void _unresolved()
 // EmInitFunc of the module: constructs the cEm29 class in the manager's work.
 void Em29Init(cEm* em)
 {
-    new (em) cEm29();
+    new (em) cEm29;
 }
 
 // Per-frame damage check (cEm29::move): an explosion / fire volume kills the bat (flag bit7, the

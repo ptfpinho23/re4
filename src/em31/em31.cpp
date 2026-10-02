@@ -265,7 +265,7 @@ extern "C" void _unresolved()
 // em31_R0_Init does the per-type setup on the first move.
 void Em31Init(cEm* em)
 {
-    new (em) cEm31();
+    new (em) cEm31;
 }
 
 // Starts the bridge fight (the plain byte stores share the zero of the pillar count).

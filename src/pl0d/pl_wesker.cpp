@@ -349,7 +349,7 @@ void cPlWesker::moveCloth()
 // PlInitFunc: placement-constructs Wesker in the player's cEm work.
 void Pl0dInit(cEm* em)
 {
-    new (em) cPlWesker();
+    new (em) cPlWesker;
 }
 
 // REL entry: registers the player constructor.

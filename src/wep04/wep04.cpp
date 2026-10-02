@@ -70,7 +70,7 @@ cObjWep* equipWeapon(cPlayer* pl)
 // ObjInitFunc[0x33]: placement-constructs the class in the work cObjMgr::construct hands over.
 void ObjXd9_init(cObj* obj)
 {
-    new (obj) cObjXd9();
+    new (obj) cObjXd9;
 }
 
 // cObjWep::init override (parent = the player): model 0x6 (type 1: 0x7, weapon list id 0x27 /

@@ -240,7 +240,7 @@ void cObjBow::interrupt()
 // ObjInitFunc[0x11]: placement-constructs the bow in the work cObjMgr::construct hands over.
 void ObjKlauBow_init(cObj* obj)
 {
-    new (obj) cObjBow();
+    new (obj) cObjBow;
 }
 
 // The hand arrow never fires by itself (the bow's setAllow does).
@@ -277,7 +277,7 @@ void cObjAllow::setMotion(cPlayer* pl)
 // ObjInitFunc[0x10]: placement-constructs the arrow in the work cObjMgr::construct hands over.
 void ObjKlauAllow_init(cObj* obj)
 {
-    new (obj) cObjAllow();
+    new (obj) cObjAllow;
 }
 
 // REL entry: registers the weapon init / move routines and both object constructor slots.

@@ -40,7 +40,7 @@ extern "C" void _unresolved()
 // builds the enemy through Em10SetFunc).
 void Em11Init(cEm* em)
 {
-    new (em) cEm10();
+    new (em) cEm10;
 }
 
 // Em10SetFunc of this module: the castle zealots (Ganado class 1): model types 7 (default; voice set 0 or 2 by emset_no bit0), 8 (voice 3) and 9 (voice 0 / 2). Fills the work's motion table mot[0..40] (body / head / hand

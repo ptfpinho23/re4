@@ -279,6 +279,25 @@ int EspMove()
             }
         }
     }
+#ifdef RE4_PORT
+    {   // every 128 frames: how many effects are alive and which classes dominate
+        static u32 nCall;
+        if ((++nCall & 127) == 0) {
+            void* vt[8]; u32 vn[8]; int nv = 0;
+            for (i = 0; i < sys->nEsp; i++) {
+                esp = (cEsp*) (sys->EspArray + i * 0x150);
+                if (!ESP_IsActive(esp)) continue;
+                void* v = *(void**) esp;
+                int k;
+                for (k = 0; k < nv; k++) if (vt[k] == v) { vn[k]++; break; }
+                if (k == nv && nv < 8) { vt[nv] = v; vn[nv] = 1; nv++; }
+            }
+            port_trace("[port] EspMove: %u of %u effects alive:", cnt, (unsigned) sys->nEsp);
+            for (int k = 0; k < nv; k++) port_trace(" %u x vtable %p (owner %d)", vn[k], vt[k], 0);
+            port_trace("\n");
+        }
+    }
+#endif
     color = 0;
     if ((f32) cnt > (f32) sys->nEsp * 0.7f) {
         color = 0x16;

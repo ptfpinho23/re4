@@ -157,7 +157,7 @@ void cObjHkSniper::setMotion(cPlayer* pl)
 // ObjInitFunc[0x30]: placement-constructs the class in the work cObjMgr::construct hands over.
 void ObjHkSniper_init(cObj* obj)
 {
-    new (obj) cObjHkSniper();
+    new (obj) cObjHkSniper;
 }
 
 // REL entry: registers the weapon init / move routines and the object constructor slot.

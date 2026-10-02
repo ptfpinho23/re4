@@ -60,7 +60,7 @@ void cObjKnife::init()
 // ObjInitFunc[0x24]: placement-constructs the class in the work cObjMgr::construct hands over.
 void ObjKnife_init(cObj* obj)
 {
-    new (obj) cObjKnife();
+    new (obj) cObjKnife;
 }
 
 // Fills the player's motion table with the knife-in-hand footwork motions (idle, no walk [1],

@@ -103,7 +103,7 @@ extern "C" void _unresolved()
 // EmInitFunc of the module: constructs the cEm22 class in the manager's work.
 void Em22Init(cEm* em)
 {
-    new (em) cEm22();
+    new (em) cEm22;
 }
 
 // Per-frame damage check (cEm22::move): an explosion / fire damage volume kills the dog outright

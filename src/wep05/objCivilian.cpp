@@ -27,7 +27,7 @@ const u8 civilian_tbl[3] = { 0x14, 0x14, 0x14 };
 // ObjInitFunc[0x2E]: placement-constructs the class in the work cObjMgr::construct hands over.
 void ObjCivilian_init(cObj* obj)
 {
-    new (obj) cObjCivilian();
+    new (obj) cObjCivilian;
 }
 
 // cObjWep::init override (Wep05_init, parent = the player): model 0x6, a 100-unit box atari with

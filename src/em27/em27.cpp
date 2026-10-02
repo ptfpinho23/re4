@@ -78,7 +78,7 @@ extern "C" void _unresolved()
 // EmInitFunc of the module: constructs the cEm27 class in the manager's work.
 void Em27Init(cEm* em)
 {
-    new (em) cEm27();
+    new (em) cEm27;
 }
 
 // Per-frame damage check (cEm27::move): a weapon hit (not 0x14 / 0x16 / flash 0x17 / 0x2A) takes

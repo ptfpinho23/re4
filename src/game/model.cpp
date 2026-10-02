@@ -4,6 +4,9 @@
 // info, light info and draw parameters used by every character/object. Also: pointer relocation
 // of model/TPL files (calcModelAddr / calcTplAddr and their inverses), bounding boxes, the parts
 // and model-info managers (PartsMgr, ModInfoMgr), and the debug skeleton display.
+#ifdef RE4_PORT
+#include "port_psp.h"
+#endif
 #include "atari.h"
 #include "model.h"
 #include "motion.h"
@@ -1023,6 +1026,17 @@ void calcTplAddr(TEXPalette* tpl)
     if (tpl == NULL) {
         return;
     }
+#ifdef RE4_PORT
+    if (!VALID_PTR(tpl)) {  // not a pointer: say so instead of relocating garbage
+        static int n;
+        if (++n <= 20) port_trace("[port] calcTplAddr(%p): not a pointer (from %p)\n", tpl, __builtin_return_address(0));
+        return;
+    }
+    if (tpl->version != 0x0020AF30) {
+        static int n;
+        if (++n <= 20) port_trace("[port] calcTplAddr(%p): no TPL magic (%08x, from %p)\n", tpl, (unsigned) tpl->version, __builtin_return_address(0));
+    }
+#endif
     if (IS_RELOCATED_I(tpl->descriptorArray)) {
         return;
     }

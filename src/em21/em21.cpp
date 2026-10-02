@@ -71,7 +71,7 @@ extern "C" void _unresolved()
 // EmInitFunc of the module: constructs the cEm21 class in the manager's work.
 void Em21Init(cEm* em)
 {
-    new (em) cEm21();
+    new (em) cEm21;
 }
 
 // Per-frame damage check (cEm21::move): the dog never dies; an explosion / fire damage volume (kind

@@ -132,7 +132,7 @@ extern "C" void _unresolved()
 // does the per-type setup on the first move.
 void Em35Init(cEm* em)
 {
-    new (em) cEm35();
+    new (em) cEm35;
 }
 
 // Damage reaction of the whole body (type 0), from move(). The area damage manager (kinds 1 / 4 /

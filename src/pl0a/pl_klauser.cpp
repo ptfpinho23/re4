@@ -548,7 +548,7 @@ static void pl_R1_KlauserAttack(cPlayer* pl)
 // PlInitFunc: placement-constructs Krauser in the player's cEm work.
 void Pl0aInit(cEm* em)
 {
-    new (em) cPlKlauser();
+    new (em) cPlKlauser;
 }
 
 // REL entry: registers the player constructor.

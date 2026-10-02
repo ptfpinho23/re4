@@ -201,7 +201,7 @@ int SmdSetParam(cObj* pObj, SmdWork* pSw)
     }
     if (pSmdComn != NULL) {
         u8* tbl = (u8*) pSmdComn + pSmdComn->TplTblOfs;
-        pObj->pModelInfo->addTplAddr(tbl + *(u32*) tbl);
+        pObj->pModelInfo->addTplAddr(tbl + FILE_U32(*(u32*) tbl));  // the file's offset word
     }
     if (pSw->motNo != 0xFF) {
         if (pSw->flags & 0x40) {

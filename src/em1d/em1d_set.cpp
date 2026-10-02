@@ -42,7 +42,7 @@ extern "C" void _unresolved()
 // builds the enemy through Em10SetFunc).
 void Em1dInit(cEm* em)
 {
-    new (em) cEm10();
+    new (em) cEm10;
 }
 
 // Em10SetFunc of this module: the island soldiers (Ganado class 2, stage 3): model type pairs 14/18 (default, voice 0), 15/19 (voice 2), 16/20 (voice 3), 17/21 (voice 2, shared table) and 2 (the gatling gunner, voice 1); also loads the effect data 0xCC / 0xCD. Fills the work's motion table mot[0..40] (body / head / hand

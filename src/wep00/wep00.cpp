@@ -54,7 +54,7 @@ cObjWep* equipWeapon(cPlayer* pl)
 // ObjInitFunc[0x3D]: placement-constructs the hand object in the work cObjMgr::construct hands over.
 void ObjHand_init(cObj* obj)
 {
-    new (obj) cObjHand();
+    new (obj) cObjHand;
 }
 
 // Fills the player's motion table (m_MotTbl) with the unarmed footwork set of the weapon archive

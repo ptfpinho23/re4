@@ -398,7 +398,7 @@ extern "C" void _unresolved()
 // EmInitFunc of the module: constructs the cEm2b class in the manager's work.
 void Em2bInit(cEm* em)
 {
-    new (em) cEm2b();
+    new (em) cEm2b;
 }
 
 // Destructor: destroys the parasite head object, the ten tentacle objects and the three chain

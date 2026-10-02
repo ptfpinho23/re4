@@ -100,7 +100,7 @@ cObjWep* equipWeapon(cPlayer* pl)
 // ObjInitFunc[0x3C]: placement-constructs the class in the work cObjMgr::construct hands over.
 void ObjHandGre_init(cObj* obj)
 {
-    new (obj) cObjHandGre();
+    new (obj) cObjHandGre;
 }
 
 // cObjWep::init override: the hand grenade model from the player archive (0x6A/0x6B); no atari /

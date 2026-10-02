@@ -140,7 +140,7 @@ extern "C" void _unresolved()
 // EmInitFunc: placement-constructs the ski in the cEm work (cEm::move -> cPl0e::move from then on).
 void Pl0eInit(cEm* em)
 {
-    new (em) cPl0e();
+    new (em) cPl0e;
 }
 
 // Per-frame update (emMove): clears the frozen-input flag, remembers rot.y for the camera roll,

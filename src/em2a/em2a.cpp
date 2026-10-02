@@ -86,7 +86,7 @@ extern "C" void _unresolved()
 // EmInitFunc of the module: constructs the cEm2a class in the manager's work.
 void Em2aInit(cEm* em)
 {
-    new (em) cEm2a();
+    new (em) cEm2a;
 }
 
 // Damage check of the bear trap (type 0): a weapon hit other than the hand / flash / mine / explosive

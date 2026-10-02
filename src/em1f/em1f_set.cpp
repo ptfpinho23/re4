@@ -42,7 +42,7 @@ extern "C" void _unresolved()
 // builds the enemy through Em10SetFunc).
 void Em1fInit(cEm* em)
 {
-    new (em) cEm10();
+    new (em) cEm10;
 }
 
 // Em10SetFunc of this module: the island soldiers (class 2): model types 14 (default, voice 0), 15 (voice 2), 16 (voice 3) and 24 (voice 2). Fills the work's motion table mot[0..40] (body / head / hand

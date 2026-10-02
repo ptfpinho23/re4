@@ -17,7 +17,7 @@
 // runs the cSubChar init and clears Status_flg[1] bit17.
 static void Pl11Init(cEm* em)
 {
-    cSubAshley* sub = new (em) cSubAshley();
+    cSubAshley* sub = new (em) cSubAshley;
 
     sub->modelSet();
     sub->init();

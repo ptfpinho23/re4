@@ -71,7 +71,7 @@ static inline void RoutineStepClear(cSubLuis* o)
 // creates his gun object.
 void LuisInit(cEm* em)
 {
-    cSubLuis* luis = new (em) cSubLuis();
+    cSubLuis* luis = new (em) cSubLuis;
     luis->modelSet();
     luis->init();
     luis->equipWeapon();
@@ -1633,7 +1633,7 @@ int sameFloorCheck(cModel* a, cModel* b)
 // ObjInitFunc[0x1E]: placement-constructs the thrown item object.
 void luisItemInit(cObj* obj)
 {
-    new (obj) cObjLuisItem();
+    new (obj) cObjLuisItem;
 }
 
 // The thrown item: the room archive's item model at his hand, a glow effect (group 0x3C), flying

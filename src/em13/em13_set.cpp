@@ -40,7 +40,7 @@ extern "C" void _unresolved()
 // builds the enemy through Em10SetFunc).
 void Em13Init(cEm* em)
 {
-    new (em) cEm10();
+    new (em) cEm10;
 }
 
 // Em10SetFunc of this module: the village Ganados (class 0): model types 0 (default), 1, 3, 4 and 6 (the robed type, voice set 3 here). Fills the work's motion table mot[0..40] (body / head / hand

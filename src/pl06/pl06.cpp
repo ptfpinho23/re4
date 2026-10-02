@@ -209,7 +209,7 @@ void cPlHunk::setHead(void* bin, void* tpl)
 // PlInitFunc: placement-constructs HUNK in the player's cEm work.
 void Pl06Init(cEm* em)
 {
-    new (em) cPlHunk();
+    new (em) cPlHunk;
 }
 
 // REL entry: registers the player constructor.

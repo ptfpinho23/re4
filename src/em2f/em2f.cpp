@@ -101,7 +101,7 @@ extern "C" void _unresolved()
 // EmInitFunc of the module: constructs the cEm2f class in the manager's work.
 void Em2fInit(cEm* em)
 {
-    new (em) cEm2f();
+    new (em) cEm2f;
 }
 
 // Per-frame damage check (cEm2f::move): the monster only takes real damage from the harpoons: a

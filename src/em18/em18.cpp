@@ -68,7 +68,7 @@ extern "C" void _unresolved()
 // EmInitFunc of the module: constructs the cEm18 class in the manager's work.
 void Em18Init(cEm* em)
 {
-    new (em) cEm18();
+    new (em) cEm18;
 }
 
 // Per-frame damage check (cEm18::move, r_no_0 != 0): an explosion / fire damage volume (kind 1 / 7) or

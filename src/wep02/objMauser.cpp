@@ -40,7 +40,7 @@ const u8 mauser_tbl[3] = { 0xE, 0xC, 0xA };
 // ObjInitFunc[0x27]: placement-constructs the class in the work cObjMgr::construct hands over.
 void ObjMauser_init(cObj* obj)
 {
-    new (obj) cObjMauser();
+    new (obj) cObjMauser;
 }
 
 // cObjWep::init override (Wep02_init, parent = the player): model 0x6 (type 2: 0x7 with the

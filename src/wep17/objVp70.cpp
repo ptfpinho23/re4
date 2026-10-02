@@ -35,7 +35,7 @@ const u8 vp70_tbl[3] = { 0xE, 0xC, 0xA };
 // ObjInitFunc[0x34]: placement-constructs the class in the work cObjMgr::construct hands over.
 void ObjVp70_init(cObj* obj)
 {
-    new (obj) cObjVp70();
+    new (obj) cObjVp70;
 }
 
 // cObjWep::init override (Wep17_init, parent = the player): model 0x6 / texture 0x5, atari bits

@@ -423,7 +423,7 @@ int EffAreaDataLoad(SstArea* area)
         pLog->err(0, 0, "EffAreaDataLoad() : data already regist.");
         return 0;
     }
-    g_pEspSys->Area_addr = area;
+    g_pEspSys->Area_addr = PORT_FIX(port_fix_sst_area, area);
     return 1;
 }
 
@@ -738,7 +738,7 @@ void* EspGetPathAddr(u32 owner, int id)
         return NULL;
     }
     ofs = t->data->ofs;
-    return (u8*) t->data + ofs[no];
+    return PORT_FIX(port_fix_path, (u8*) t->data + ofs[no]);
 }
 
 // Registers the owner's room effect (sst) data and id list in sstTbl[owner].

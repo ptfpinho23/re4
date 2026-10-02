@@ -151,8 +151,10 @@ extern "C" void port_gx_overlay_line(const char* text)
 extern "C" int port_gx_active(void) { return inited; }
 
 // Drawn straight into the displayed frame after the swap (the debug screen's pixel writer).
+extern "C" int port_overlay_on;
 static void drawOverlay(void)
 {
+    if (!port_overlay_on) return;
     overlayFrame++;
     int first = (overlayNext - overlayCount + OVERLAY_LINES) % OVERLAY_LINES;
     int shown = 0;
@@ -227,10 +229,30 @@ static TexCacheEntry texCache[TEXCACHE_MAX];
 static u32 texUseClock;
 static u32 texCacheBytes;      // converted bytes held; the PSP's heap is small, so the cache keeps a budget
 extern "C" { unsigned int port_gx_stat_conversions, port_gx_stat_copies, port_gx_stat_dropped; }  // dropped: bad-vertex draws
-extern "C" { unsigned int port_gx_us_xform, port_gx_us_state; }  // microseconds per stats period: vertex parsing/transform, draw state (texture cache)
+extern "C" { unsigned int port_gx_stat_offscreen, port_gx_stat_onscreen; }
+extern "C" { unsigned int port_gx_us_xform, port_gx_us_state, port_gx_us_gather, port_gx_us_native, port_gx_stat_native_draws, port_gx_stat_cpu_draws; }
+extern "C" {
+// The native path (drawNative): vertices of disc display lists handed to the GE in the model's
+// space, for the GE to transform, light and texture-map. 0 keeps everything on the CPU path (the
+// host test, and a debugger poke for comparisons).
+#ifdef __PSP__
+volatile int port_gx_native = 1;
+#else
+volatile int port_gx_native = 0;
+#endif
+unsigned int port_gx_stat_native, port_gx_stat_cpu;  // vertices per stats period by path
+unsigned int port_gx_stat_why[8];                    // vertices kept on the CPU path, by reason
+}
+static u32 lightGen;                       // bumped when a light / channel set-up changes
+static f32 boundSu = 1.0f, boundSv = 1.0f; // the bound texture's padding scale (applyDrawState)
+extern "C" { volatile unsigned int port_gx_flags; }
+static void* lastListCaller;  // who called GXCallDisplayList (the frame dump names it)
+static u32 immQuadIndex;      // immediate-mode quads drawn this frame (the debugger's bisection)
+static u32 lastListBytes;  // debugger pokes: 1 = no textures, 2 = no lighting (white), 4 = vertex colours only  // microseconds per stats period: vertex parsing/transform, draw state (texture cache)
 #ifdef __PSP__
 extern "C" unsigned int sceKernelGetSystemTimeLow(void);  // (the SDK headers clash with the game's)
-static inline u32 usNow(void) { return sceKernelGetSystemTimeLow(); }
+extern "C" volatile int port_profile;
+static inline u32 usNow(void) { return port_profile ? sceKernelGetSystemTimeLow() : 0; }
 #else
 static inline u32 usNow(void) { return 0; }
 #endif  // per frame, for port_gu's [ge] frame line
@@ -249,14 +271,32 @@ static u32 psmBits(u8 psm)
 static u32 entryBytes(const TexCacheEntry* e)
 {
     if (e->psm == PG_PSM_DXT1) return (u32) (e->pw / 4) * (e->ph / 4) * 8;
+    if (e->psm == PG_PSM_DXT3) return (u32) (e->pw / 4) * (e->ph / 4) * 16;
     return ((u32) e->pw * e->ph * psmBits(e->psm)) / 8 + (e->clut ? e->clutN * 4u : 0u);
+}
+// Buffers an evicted texture used are freed only once the frame's GE work is done (GXCopyDisp):
+// the display list may still reference them.
+#define DEFERRED_MAX 512
+static void* deferredFree[DEFERRED_MAX];
+static int nDeferredFree;
+static void deferFree(void* p)
+{
+    if (!p) return;
+    if (nDeferredFree < DEFERRED_MAX) deferredFree[nDeferredFree++] = p;
+    else free(p);  // (the list is full: the GE has most likely finished with an old one)
+}
+static void flushDeferredFree(void)
+{
+    for (int i = 0; i < nDeferredFree; i++) free(deferredFree[i]);
+    nDeferredFree = 0;
 }
 static void freeEntry(TexCacheEntry* e)
 {
+    pg_texture_forget();
     texCacheBytes -= entryBytes(e);
-    free(e->converted);
+    deferFree(e->converted);
     e->converted = NULL;
-    if (e->clut) { free(e->clut); e->clut = NULL; }
+    if (e->clut) { deferFree(e->clut); e->clut = NULL; }
     e->clutN = 0;
 }
 
@@ -325,22 +365,22 @@ static void* fitTexture(void* conv, u8* psm, u32** clut, int w, int h, u16* pw, 
     *su = (f32) w / (f32) tw;
     *sv = (f32) h / (f32) th;
     if ((u32) w == tw && (u32) h == th && fx == 1 && fy == 1) { *pw = (u16) w; *ph = (u16) h; return conv; }
-    if (*psm == PG_PSM_DXT1 && fx == 1 && fy == 1) {
-        int bw = (w + 3) / 4, bh = (h + 3) / 4, pbw = tw / 4, pbh = th / 4;
-        u8* out = (u8*) ALIGNED_ALLOC(pbw * pbh * 8);
+    if ((*psm == PG_PSM_DXT1 || *psm == PG_PSM_DXT3) && fx == 1 && fy == 1) {
+        int bw = (w + 3) / 4, bh = (h + 3) / 4, pbw = tw / 4, pbh = th / 4, bb = *psm == PG_PSM_DXT3 ? 16 : 8;
+        u8* out = (u8*) ALIGNED_ALLOC(pbw * pbh * bb);
         if (!out) return conv;
         for (int by = 0; by < pbh; by++) {
             int sy = by < bh ? by : bh - 1;
             for (int bx = 0; bx < pbw; bx++) {
                 int sx = bx < bw ? bx : bw - 1;
-                memcpy(out + (by * pbw + bx) * 8, (const u8*) conv + (sy * bw + sx) * 8, 8);
+                memcpy(out + (by * pbw + bx) * bb, (const u8*) conv + (sy * bw + sx) * bb, bb);
             }
         }
         free(conv);
         *pw = (u16) tw; *ph = (u16) th;
         return out;
     }
-    if (fx == 1 && fy == 1 && *psm != PG_PSM_DXT1) {  // padding only, in the format's own texel size
+    if (fx == 1 && fy == 1 && *psm != PG_PSM_DXT1 && *psm != PG_PSM_DXT3) {  // padding only, in the format's own texel size
         u32 bits = psmBits(*psm);
         u32 rowBytes = (tw * bits) / 8, srcRow = ((u32) w * bits) / 8;
         u8* out = (u8*) ALIGNED_ALLOC(rowBytes * th);
@@ -365,7 +405,7 @@ static void* fitTexture(void* conv, u8* psm, u32** clut, int w, int h, u16* pw, 
         *pw = (u16) tw; *ph = (u16) th;
         return out;
     }
-    if (*psm != PG_PSM_DXT1 && *psm != PG_PSM_8888) {
+    if (*psm != PG_PSM_DXT1 && *psm != PG_PSM_DXT3 && *psm != PG_PSM_8888) {
         // oversize in a compact format: keep it compact, halved by dropping texels (the fonts and
         // UI sheets this concerns are read one cell at a time; a box filter would cost 32 bits)
         u32 bits = psmBits(*psm);
@@ -394,13 +434,25 @@ static void* fitTexture(void* conv, u8* psm, u32** clut, int w, int h, u16* pw, 
     }
     // oversize 8888 / CMPR: to 8888 first, then a box filter into the padded power-of-two size
     u32* src;
-    if (*psm == PG_PSM_DXT1) {
-        int bw = (w + 3) / 4, bh = (h + 3) / 4;
+    if (*psm == PG_PSM_DXT1 || *psm == PG_PSM_DXT3) {
+        int bw = (w + 3) / 4, bh = (h + 3) / 4, bb = *psm == PG_PSM_DXT3 ? 16 : 8;
         u32* dec = (u32*) ALIGNED_ALLOC(bw * 4 * bh * 4 * 4);
-        if (!dec) return conv;
+        if (!dec) { free(conv); return NULL; }  // (an oversize buffer must not reach the GE)
         for (int by = 0; by < bh; by++)
-            for (int bx = 0; bx < bw; bx++)
-                decodeDxt1Block((const u8*) conv + (by * bw + bx) * 8, dec + (by * 4) * (bw * 4) + bx * 4, bw * 4, 4, 4);
+            for (int bx = 0; bx < bw; bx++) {
+                const u8* blk = (const u8*) conv + (by * bw + bx) * bb;
+                u32* o = dec + (by * 4) * (bw * 4) + bx * 4;
+                decodeDxt1Block(blk, o, bw * 4, 4, 4);
+                if (bb == 16) {  // the alpha nibbles
+                    for (int y = 0; y < 4; y++) {
+                        u16 row = (u16) (blk[8 + y * 2] | (blk[9 + y * 2] << 8));
+                        for (int x = 0; x < 4; x++) {
+                            u32 a = (row >> (x * 4)) & 15;
+                            o[y * bw * 4 + x] = (o[y * bw * 4 + x] & 0x00FFFFFFu) | ((a * 17) << 24);
+                        }
+                    }
+                }
+            }
         free(conv);
         src = dec;
         w = bw * 4; h = bh * 4;  // the decoded image is block-aligned; the scale stays the caller's
@@ -415,7 +467,7 @@ static void* fitTexture(void* conv, u8* psm, u32** clut, int w, int h, u16* pw, 
     *psm = PG_PSM_8888;
     int ow = (int) (tw / fx), oh = (int) (th / fy);
     u32* out = (u32*) ALIGNED_ALLOC(ow * oh * 4);
-    if (!out) { *pw = (u16) w; *ph = (u16) h; *su = *sv = 1.0f; return src; }
+    if (!out) { if (src != conv) free(src); else free(conv); return NULL; }  // (an oversize buffer must not reach the GE)
     for (int y = 0; y < oh; y++) {
         int sy0 = y * fy;
         if (sy0 >= h) sy0 = h - 1;
@@ -475,25 +527,57 @@ static void* convertTexture(const TexObjPort* t, const TlutPort* tlut, u8* psmOu
     *clutOut = NULL;
     *clutN = 0;
     if (fmt == 14) {  // CMPR: 8x8 tiles of four 4x4 DXT1 blocks -> GE DXT1 (indices then colours)
-        *psmOut = PG_PSM_DXT1;
         int bw = (w + 3) / 4, bh = (h + 3) / 4;
-        u8* out = (u8*) ALIGNED_ALLOC(bw * bh * 8);
+        int tilesX = (w + 7) / 8, tilesY = (h + 7) / 8;
+        // A block whose first colour is not above the second is in the three-colour mode: its
+        // index 3 is transparent. The GE's DXT1 has no such mode (the texel comes out black), so
+        // such a texture becomes DXT3: the same colours, plus a 4-bit alpha per texel.
+        int punch = 0;
+        for (int i = 0; i < tilesX * tilesY * 4 && !punch; i++) {
+            u16 c0 = (u16) ((src[i * 8] << 8) | src[i * 8 + 1]), c1 = (u16) ((src[i * 8 + 2] << 8) | src[i * 8 + 3]);
+            if (c0 <= c1) punch = 1;
+        }
+        int bb = punch ? 16 : 8;
+        *psmOut = punch ? PG_PSM_DXT3 : PG_PSM_DXT1;
+        u8* out = (u8*) ALIGNED_ALLOC(bw * bh * bb);
         if (!out) return NULL;
-        for (int ty = 0; ty < (h + 7) / 8; ty++) {
-            for (int tx = 0; tx < (w + 7) / 8; tx++) {
+        for (int ty = 0; ty < tilesY; ty++) {
+            for (int tx = 0; tx < tilesX; tx++) {
                 for (int sub = 0; sub < 4; sub++) {
                     int bx = tx * 2 + (sub & 1), by = ty * 2 + (sub >> 1);
                     if (bx >= bw || by >= bh) { src += 8; continue; }
-                    u8* d = out + (by * bw + bx) * 8;
+                    u8* d = out + (by * bw + bx) * bb;
+                    u16 c0 = (u16) ((src[0] << 8) | src[1]), c1 = (u16) ((src[2] << 8) | src[3]);
+                    int three = c0 <= c1;
+                    int swap = punch && three && c0 != c1;  // keep the GE in the four-colour mode
                     for (int i = 0; i < 4; i++) {  // index rows: GC keeps texel 0 in the top bits
                         u8 b = src[4 + i];
-                        d[i] = (u8) (((b & 0x03) << 6) | ((b & 0x0C) << 2) | ((b & 0x30) >> 2) | ((b & 0xC0) >> 6));
+                        u8 r = (u8) (((b & 0x03) << 6) | ((b & 0x0C) << 2) | ((b & 0x30) >> 2) | ((b & 0xC0) >> 6));
+                        if (punch) {
+                            u16 alpha = 0;
+                            u8 r2 = 0;
+                            for (int x = 0; x < 4; x++) {
+                                u32 idx = (r >> (x * 2)) & 3;
+                                u32 a = 15;
+                                if (three && idx == 3) { a = 0; idx = 0; }
+                                else if (swap && idx < 2) idx ^= 1;
+                                r2 |= (u8) (idx << (x * 2));
+                                alpha |= (u16) (a << (x * 4));
+                            }
+                            r = r2;
+                            d[8 + i * 2] = (u8) alpha; d[9 + i * 2] = (u8) (alpha >> 8);
+                        }
+                        d[i] = r;
                     }
-                    d[4] = src[1]; d[5] = src[0];  // colour 0, little-endian
-                    d[6] = src[3]; d[7] = src[2];  // colour 1
+                    if (swap) { d[4] = src[3]; d[5] = src[2]; d[6] = src[1]; d[7] = src[0]; }
+                    else { d[4] = src[1]; d[5] = src[0]; d[6] = src[3]; d[7] = src[2]; }  // colours, little-endian
                     src += 8;
                 }
             }
+        }
+        if (punch) {
+            static u32 nTr;
+            if (++nTr <= 12) port_trace("[gx] CMPR %ux%u uses the transparent mode: DXT3\n", (unsigned) w, (unsigned) h);
         }
         return out;
     }
@@ -613,6 +697,11 @@ static u32 texSignature(const TexObjPort* t, const TlutPort* tlut)
     return h;
 }
 
+// The entry a texture's data pointer last resolved to: a draw binds the texture of the draw before
+// it far more often than not, and the cache is a few hundred entries to walk.
+static struct { const void* data; TexCacheEntry* e; } texMemo[64];
+static inline u32 memoSlot(const void* d) { return (((u32) (uintptr_t) d) >> 5) & 63; }
+
 static TexCacheEntry* cachedTexture(const TexObjPort* t)
 {
 #ifdef __PSP__
@@ -626,6 +715,16 @@ static TexCacheEntry* cachedTexture(const TexObjPort* t)
         if (++nb <= 20) port_trace("[gx] bad texture object: data %p %ux%u fmt %d\n", t->data, t->width, t->height, t->format);
         return NULL;
     }
+    const TlutPort* tlut = (t->isCI && t->tlutName < 20 && tlutLoaded[t->tlutName]) ? &tlutTable[t->tlutName] : NULL;
+    const void* lutPtr = tlut ? tlut->lut : NULL;
+    {
+        TexCacheEntry* e = texMemo[memoSlot(t->data)].e;
+        if (e && texMemo[memoSlot(t->data)].data == t->data && e->converted && e->data == t->data && e->tlut == lutPtr
+            && e->w == t->width && e->h == t->height && e->fmt == t->format && e->gen == texGeneration) {
+            e->lastUse = ++texUseClock;
+            return e;
+        }
+    }
     for (int i = 0; i < COPY_MAX; i++) {
         if (copies[i].buf && copies[i].dest == t->data) {
             static TexCacheEntry copyEntry;
@@ -638,8 +737,6 @@ static TexCacheEntry* cachedTexture(const TexObjPort* t)
             return &copyEntry;
         }
     }
-    const TlutPort* tlut = (t->isCI && t->tlutName < 20 && tlutLoaded[t->tlutName]) ? &tlutTable[t->tlutName] : NULL;
-    const void* lutPtr = tlut ? tlut->lut : NULL;
     TexCacheEntry* victim = NULL;
     for (int i = 0; i < TEXCACHE_MAX; i++) {
         TexCacheEntry* e = &texCache[i];
@@ -655,6 +752,7 @@ static TexCacheEntry* cachedTexture(const TexObjPort* t)
                 e->gen = texGeneration;
             }
             e->lastUse = ++texUseClock;
+            texMemo[memoSlot(t->data)].data = t->data; texMemo[memoSlot(t->data)].e = e;
             return e;
         }
         if (!e->converted) {
@@ -718,8 +816,8 @@ static TexCacheEntry* cachedTexture(const TexObjPort* t)
     f32 su, sv;
     conv = fitTexture(conv, &psm, &clut, t->width, t->height, &pw, &ph, &su, &sv);
     if (!conv) { if (clut) free(clut); return NULL; }
-    if (psm == PG_PSM_DXT1) clut = NULL;
-    pg_dcache_writeback(conv, psm == PG_PSM_DXT1 ? (pw / 4) * (ph / 4) * 8 : (pw * ph * psmBits(psm)) / 8);
+    if (psm == PG_PSM_DXT1 || psm == PG_PSM_DXT3) clut = NULL;
+    pg_dcache_writeback(conv, psm == PG_PSM_DXT1 ? (pw / 4) * (ph / 4) * 8 : psm == PG_PSM_DXT3 ? (pw / 4) * (ph / 4) * 16 : (pw * ph * psmBits(psm)) / 8);
     if (clut) pg_dcache_writeback(clut, clutN * 4);
     victim->pw = pw; victim->ph = ph; victim->su = su; victim->sv = sv;
     victim->clut = clut; victim->clutN = clut ? clutN : 0;
@@ -734,6 +832,7 @@ static TexCacheEntry* cachedTexture(const TexObjPort* t)
     victim->lastUse = ++texUseClock;
     victim->sig = texSignature(t, tlut);
     victim->gen = texGeneration;
+    texMemo[memoSlot(t->data)].data = t->data; texMemo[memoSlot(t->data)].e = victim;
     return victim;
 }
 
@@ -786,11 +885,13 @@ static void applyDrawState(int hasVertexColor)
 {
     u32 t0 = usNow();
     applyDrawStateImpl(hasVertexColor);
+    if (port_gx_flags & 1) pg_texture_off();
     port_gx_us_state += usNow() - t0;
 }
 static void applyDrawStateImpl(int hasVertexColor)
 {
     drawConstColorOn = 0;
+    boundSu = boundSv = 1.0f;
     int si = textureStage();
     if (si < 0) {
         pg_texture_off();
@@ -832,6 +933,7 @@ static void applyDrawStateImpl(int hasVertexColor)
     }
     if (st->op == 1) tfx = PG_TFX_DECAL;         // GX_DECAL through GXSetTevOp
     int tcc = inputsMention(st->ain, 4) ? 1 : 0;  // the texture alpha counts only when the alpha combiner reads it
+    boundSu = e->su; boundSv = e->sv;
     pg_texture(e->psm, e->pw, e->ph, e->converted, t->wrapS == 0 ? 1 : 0, t->wrapT == 0 ? 1 : 0,
                t->minFilt == 0 ? 0 : 1, t->magFilt == 0 ? 0 : 1, tfx, tcc, e->su, e->sv, e->clut, e->clutN);
 }
@@ -992,6 +1094,50 @@ static void genTexCoord(const TexGen* g, u32 mtxId, const f32* pos, const f32* n
 
 // Parses `count` vertices of vertex format `vf` from the stream and draws them as `prim`.
 static const u8* drawVerticesImpl(Parser* s, int prim, int vf, u32 count);
+
+// The projection's near plane as a view-space z (GX perspective: m23 / (m22 - 1) is the near distance).
+static f32 nearPlane(void)
+{
+    f32 m22 = projection[2][2], m23 = projection[2][3];
+    f32 n = (m22 - 1.0f) != 0.0f ? m23 / (m22 - 1.0f) : 1.0f;
+    if (!(n > 0.0f) || n > 1.0e6f) n = 1.0f;
+    return -n;
+}
+
+static inline void lerpVertex(const PgVertex* a, const PgVertex* b, f32 t, PgVertex* o)
+{
+    o->x = a->x + (b->x - a->x) * t; o->y = a->y + (b->y - a->y) * t; o->z = a->z + (b->z - a->z) * t;
+    o->u = a->u + (b->u - a->u) * t; o->v = a->v + (b->v - a->v) * t;
+    u32 c = 0;
+    for (int k = 0; k < 4; k++) {
+        int ca = (a->color >> (k * 8)) & 0xFF, cb = (b->color >> (k * 8)) & 0xFF;
+        c |= (u32) (ca + (int) ((cb - ca) * t)) << (k * 8);
+    }
+    o->color = c;
+}
+
+// Clips one triangle against the plane z = zn (keeps z <= zn): 0, 3 or 6 vertices out.
+static u32 clipTriangleNear(const PgVertex* a, const PgVertex* b, const PgVertex* c, f32 zn, PgVertex* out)
+{
+    const PgVertex* in[3] = {a, b, c};
+    PgVertex poly[4];
+    int n = 0;
+    for (int i = 0; i < 3; i++) {
+        const PgVertex* p = in[i];
+        const PgVertex* q = in[(i + 1) % 3];
+        int pin = p->z <= zn, qin = q->z <= zn;
+        if (pin) poly[n++] = *p;
+        if (pin != qin) {
+            f32 t = (zn - p->z) / (q->z - p->z);
+            lerpVertex(p, q, t, &poly[n++]);
+        }
+    }
+    if (n < 3) return 0;
+    out[0] = poly[0]; out[1] = poly[1]; out[2] = poly[2];
+    if (n == 3) return 3;
+    out[3] = poly[0]; out[4] = poly[2]; out[5] = poly[3];
+    return 6;
+}
 static const u8* drawVertices(Parser* s, int prim, int vf, u32 count)
 {
     u32 t0 = usNow();
@@ -999,9 +1145,366 @@ static const u8* drawVertices(Parser* s, int prim, int vf, u32 count)
     port_gx_us_xform += usNow() - t0;
     return r;
 }
+
+// ---------------------------------------------------------------- the native path
+static inline const u8* attrPtr(const u8* sp, u8 mode, const u8* base, u32 stride)
+{
+    if (mode == 1) return sp;                                    // direct: the data is in the stream
+    if (mode == 2) return base + (u32) sp[0] * stride;           // INDEX8
+    return base + (u32) ((sp[0] << 8) | sp[1]) * stride;         // INDEX16 (big-endian)
+}
+static inline u32 attrStreamSize(u8 mode, u32 direct) { return mode == 1 ? direct : mode == 2 ? 1 : mode == 3 ? 2 : 0; }
+
+// Draws `count` vertices of a disc display list through the GE's own transform: the attributes
+// are gathered (de-indexed, byte-swapped) into a GE vertex in the model's space, the model matrix
+// is the game's current position matrix (with the fixed-point scale of 16-bit positions folded
+// in), the lights are the GE's and the texture coordinates go through the GE's scale or texture
+// matrix. Returns the stream position after the vertices, or NULL when the draw needs something
+// the GE cannot do the game's way (the CPU path then takes it): per-vertex matrix indices,
+// generated texture coordinates from positions / normals, more than four lights, spot angle
+// attenuation, an ambient colour from the vertices.
+static const u8* drawNative(Parser* s, int prim, int vf, u32 count)
+{
+    const Vat* f = &vat[vf];
+#define WHY(n) do { port_gx_stat_why[n] += count; return NULL; } while (0)
+    if (prim != 0 && prim != 2 && prim != 3 && prim != 4) WHY(0);  // quads, triangles, strips, fans
+    if (vcd[A_PNMTX]) WHY(1);
+    for (int k = 0; k < 8; k++) if (vcd[A_TEXMTX0 + k]) WHY(1);
+    const u8 posMode = vcd[A_POS], nrmMode = vcd[A_NRM], clrMode = vcd[A_CLR0], texMode = vcd[A_TEX0];
+    if (!posMode || f->pos.cnt != 1 || (f->pos.type != 1 && f->pos.type != 3 && f->pos.type != 4)) {
+        static u32 nTr;
+        if (++nTr <= 6) port_trace("[gx] native: position mode %d type %d cnt %d frac %d (colour mode %d type %d)\n", posMode, f->pos.type, f->pos.cnt, f->pos.frac, vcd[A_CLR0], f->clr[0].type);
+        WHY(2);
+    }
+    if (posMode != 1 && !arrayBase[A_POS]) WHY(2);
+    const int ch = rasChannel();
+    const Chan* c = ch >= 0 ? &chan[ch] : NULL;
+    const Chan* ca = ch >= 0 ? &chan[ch + 2] : NULL;
+    const int lit = c && c->enable;
+    if (lit && !nrmMode) WHY(3);
+    const u8 nrmType = f->nrm.type;
+    if (nrmMode) {
+        if (f->nrm.cnt != 0 || (nrmType != 1 && nrmType != 3 && nrmType != 4)) WHY(3);
+        if (nrmMode != 1 && !arrayBase[A_NRM]) WHY(3);
+    }
+    const u8 clrType = f->clr[0].type;
+    if (clrMode && (clrType > 5 || (clrMode != 1 && !arrayBase[A_CLR0]))) {
+        static u32 nTr;
+        if (++nTr <= 6) port_trace("[gx] native: colour mode %d type %d base %p\n", clrMode, clrType, arrayBase[A_CLR0]);
+        WHY(2);
+    }
+    const u8 texType = f->tex[0].type;
+    if (texMode && (f->tex[0].cnt != 1 || texType > 4 || (texMode != 1 && !arrayBase[A_TEX0]))) WHY(4);
+    const int si = textureStage();
+    const int hasTex = texMode != 0 && si >= 0;
+    const TexGen* g = &texGen[0];
+    int texMatrix = 0;
+    if (si >= 0) {
+        if (!texMode || g->src != 4 || g->normalize || g->postMtx != 125) WHY(4);  // generated / post-transformed coordinates
+        if (g->mtx != 60 && g->mtx < 64) {
+            if (g->func == 0) WHY(4);                                                // a 3x4 matrix with the q divide
+            texMatrix = 1;
+        }
+    }
+    // the stream: POS, NRM, CLR0, CLR1, TEX0..7, each direct or an 8 / 16-bit index
+    static const u8 clrSize[6] = {2, 3, 4, 2, 3, 4};
+    u32 off = 0;
+    const u32 posOff = off; off += attrStreamSize(posMode, compSize(f->pos.type) * 3);
+    const u32 nrmOff = off; off += attrStreamSize(nrmMode, compSize(nrmType) * 3);
+    const u32 clrOff = off; off += attrStreamSize(clrMode, clrSize[clrType % 6]);
+    off += attrStreamSize(vcd[A_CLR1], clrSize[f->clr[1].type % 6]);
+    const u32 texOff = off; off += attrStreamSize(texMode, compSize(texType) * 2);
+    for (int k = 1; k < 8; k++) off += attrStreamSize(vcd[A_TEX0 + k], compSize(f->tex[k].type) * (f->tex[k].cnt ? 2 : 1));
+    const u32 streamBytes = off;
+    PgNative nat;
+    nat.nLights = 0;
+    f32 ambientExtra[3] = {0.0f, 0.0f, 0.0f};  // lights left out of the GE's four
+    u8 lightIdx[8];
+    if (lit) {
+        if ((c->ambSrc != 0 && c->matSrc != 0) || c->attnFn == 0 || ca->enable) {
+            static u32 nTr;
+            if (++nTr <= 6) port_trace("[gx] native: lighting model ambSrc %d matSrc %d attnFn %d diffFn %d alpha enable %d mask %x\n", c->ambSrc, c->matSrc, c->attnFn, c->diffFn, ca->enable, (unsigned) c->lightMask);
+            WHY(5);
+        }
+        for (int i = 0; i < 8; i++) {
+            if (!(c->lightMask & (1u << i))) continue;
+            const LightPort* l = &lights[i];
+            f32 a0 = 1.0f, a1 = 0.0f, a2 = 0.0f;
+            u32 lcol = l->color;
+            f32 peak = 1.0f, cutoff = 0.0f, exponent = 0.0f;
+            int spot = 0;
+            if (c->attnFn == 1) {  // GX_AF_SPOT: angle attenuation over distance attenuation
+                if (l->k0 == 0.0f && l->k1 == 0.0f && l->k2 == 0.0f) continue;   // (no light at any distance)
+                peak = l->a0;
+                if (l->a1 != 0.0f || l->a2 != 0.0f) {
+                    // a0 + a1 cos: zero at the cutoff cosine -a0 / a1, rising to a0 + a1 on the axis
+                    // (GXInitLightSpot's GX_SP_COS family). The GE's spot is cos^exponent inside
+                    // the cutoff: exact for a 90 degree cone, matched at the cone's middle otherwise.
+                    const f32 len2 = l->dx * l->dx + l->dy * l->dy + l->dz * l->dz;
+                    cutoff = l->a1 > 0.0f ? -l->a0 / l->a1 : 2.0f;
+                    peak = l->a0 + l->a1;
+                    if (l->a2 != 0.0f || cutoff <= -0.99f || cutoff >= 0.99f || peak <= 0.0f || len2 < 0.98f || len2 > 1.02f) {
+                        static u32 nTr;
+                        if (++nTr <= 10) port_trace("[gx] native: light %d angle %g %g %g dist %g %g %g pos %g %g %g dir %g %g %g diffFn %d\n", i, l->a0, l->a1, l->a2, l->k0, l->k1, l->k2, l->px, l->py, l->pz, l->dx, l->dy, l->dz, c->diffFn);
+                        WHY(6);
+                    }
+                    spot = 1;
+                    const f32 mid = (1.0f + cutoff) * 0.5f;
+                    exponent = cutoff == 0.0f ? 1.0f : logf(0.5f) / logf(mid);
+                }
+                if (peak <= 0.0f) continue;
+                // the constant factor is a brightness: into the colour when it brightens (the GE
+                // clamps the attenuation at 1), into the distance terms when it dims
+                a0 = l->k0; a1 = l->k1; a2 = l->k2;
+                if (peak > 1.0f) {
+                    u32 r = (u32) ((f32) (lcol & 0xFF) * peak), gg = (u32) ((f32) ((lcol >> 8) & 0xFF) * peak), b = (u32) ((f32) ((lcol >> 16) & 0xFF) * peak);
+                    lcol = (lcol & 0xFF000000u) | ((b > 255 ? 255 : b) << 16) | ((gg > 255 ? 255 : gg) << 8) | (r > 255 ? 255 : r);
+                } else if (peak < 1.0f) {
+                    a0 /= peak; a1 /= peak; a2 /= peak;
+                }
+            }
+            if (nat.nLights == 8) WHY(7);
+            lightIdx[nat.nLights] = (u8) i;
+            PgNativeLight* o = &nat.light[nat.nLights++];
+            o->ambientOnly = c->diffFn == 0;
+            o->pos[0] = l->px; o->pos[1] = l->py; o->pos[2] = l->pz;
+            o->color = lcol;
+            o->att[0] = a0; o->att[1] = a1; o->att[2] = a2;
+            o->spot = spot;
+            o->dir[0] = l->dx; o->dir[1] = l->dy; o->dir[2] = l->dz;
+            o->exponent = exponent; o->cutoff = cutoff;
+        }
+        if (nat.nLights > 4) {
+            // the GE has four lights: the ones that add nothing visible to this draw are left out
+            // (a room's lamps reach a few metres; a model far from them still lists them). Their
+            // strength is taken at the draw's first, middle and last vertex.
+            f32 sample[3][3];
+            for (int k = 0; k < 3; k++) {
+                const u32 n = k == 0 ? 0 : k == 1 ? count / 2 : count - 1;
+                const u8* p = attrPtr(s->p + n * streamBytes + posOff, posMode, arrayBase[A_POS], arrayStride[A_POS]);
+                f32 x, y, z;
+                if (f->pos.type == 4) { x = bef32(p); y = bef32(p + 4); z = bef32(p + 8); }
+                else {
+                    const f32 q = 1.0f / (f32) (1u << (f->pos.frac & 31));
+                    if (f->pos.type == 3) { x = (f32) (s16) be16(p) * q; y = (f32) (s16) be16(p + 2) * q; z = (f32) (s16) be16(p + 4) * q; }
+                    else { x = (f32) (s8) p[0] * q; y = (f32) (s8) p[1] * q; z = (f32) (s8) p[2] * q; }
+                }
+                const f32* m = &mtxMem[currentMtx][0];
+                sample[k][0] = m[0] * x + m[1] * y + m[2] * z + m[3];
+                sample[k][1] = m[4] * x + m[5] * y + m[6] * z + m[7];
+                sample[k][2] = m[8] * x + m[9] * y + m[10] * z + m[11];
+            }
+            f32 strength[8];
+            for (int i = 0; i < nat.nLights; i++) {
+                const PgNativeLight* o = &nat.light[i];
+                const u32 col = o->color;
+                u32 top = col & 0xFF;
+                if (((col >> 8) & 0xFF) > top) top = (col >> 8) & 0xFF;
+                if (((col >> 16) & 0xFF) > top) top = (col >> 16) & 0xFF;
+                f32 best = 0.0f;
+                for (int k = 0; k < 3; k++) {
+                    const f32 dx = o->pos[0] - sample[k][0], dy = o->pos[1] - sample[k][1], dz = o->pos[2] - sample[k][2];
+                    const f32 d2 = dx * dx + dy * dy + dz * dz;
+                    const f32 den = o->att[0] + o->att[1] * sqrtf(d2) + o->att[2] * d2;
+                    const f32 v = den > 1.0f ? (f32) top / den : (f32) top;
+                    if (v > best) best = v;
+                }
+                strength[i] = best;
+            }
+            while (nat.nLights > 4) {
+                int weakest = 0;
+                for (int i = 1; i < nat.nLights; i++) if (strength[i] < strength[weakest]) weakest = i;
+                if (strength[weakest] >= 1.5f) {  // (of 255)
+                    // a faint light becomes ambient: a quarter of it, the mean of its diffuse term
+                    // over all the directions a surface can face
+                    if (strength[weakest] >= 12.0f || c->ambSrc != 0) {
+                        static u32 nTr;
+                        if (++nTr <= 6) port_trace("[gx] native: %d lights, the weakest adds %g\n", nat.nLights, strength[weakest]);
+                        WHY(7);
+                    }
+                    const PgNativeLight* o = &nat.light[weakest];
+                    const u32 col = o->color;
+                    u32 top = col & 0xFF;
+                    if (((col >> 8) & 0xFF) > top) top = (col >> 8) & 0xFF;
+                    if (((col >> 16) & 0xFF) > top) top = (col >> 16) & 0xFF;
+                    const f32 k = (o->ambientOnly ? 1.0f : 0.25f) * strength[weakest] / (f32) (top ? top : 1);
+                    ambientExtra[0] += (f32) (col & 0xFF) * k;
+                    ambientExtra[1] += (f32) ((col >> 8) & 0xFF) * k;
+                    ambientExtra[2] += (f32) ((col >> 16) & 0xFF) * k;
+                }
+                for (int i = weakest; i + 1 < nat.nLights; i++) { nat.light[i] = nat.light[i + 1]; strength[i] = strength[i + 1]; lightIdx[i] = lightIdx[i + 1]; }
+                nat.nLights--;
+            }
+        }
+    }
+#undef WHY
+    const u8* sp = s->p;
+    const u8* end = sp + count * streamBytes;
+    if (cullMode == 3) return end;  // GX_CULL_ALL
+    const f32* m = &mtxMem[currentMtx][0];
+    for (int i = 0; i < 12; i++) {
+        if (!(m[i] == m[i])) { port_gx_stat_dropped++; return end; }
+    }
+    const int hasColor = clrMode != 0;
+    applyDrawState(hasColor);
+    if (drawConstColorOn && lit) { port_gx_stat_why[5] += count; return NULL; }
+    // the GE vertex: texture f32 x 2, colour, normal (when lit), position
+    u32 o = 0, vtype = PG_VT_COLOR_8888;
+    if (hasTex) { vtype |= PG_VT_TEX_F32; o = 8; }
+    const u32 clrOut = o; o += 4;
+    const u32 nrmOut = o;
+    if (lit) {
+        if (nrmType == 1) { o += 3; vtype |= PG_VT_NRM_S8; }
+        else if (nrmType == 3) { o += 6; vtype |= PG_VT_NRM_S16; }
+        else { o += 12; vtype |= PG_VT_NRM_F32; }
+    }
+    const int pos16 = f->pos.type == 3, pos8 = f->pos.type == 1;
+    u32 posOut;
+    if (pos8) { posOut = o; o += 3; vtype |= PG_VT_POS_S8; }
+    else if (pos16) { o = (o + 1) & ~1u; posOut = o; o += 6; vtype |= PG_VT_POS_S16; }
+    else { o = (o + 3) & ~3u; posOut = o; o += 12; vtype |= PG_VT_POS_F32; }
+    const u32 stride = (o + 3) & ~3u;
+    const int quads = prim == 0;
+    const u32 outCount = quads ? count / 4 * 6 : count;
+    u8* out = (u8*) pg_get_memory((int) (outCount * stride));
+    if (!out) return end;
+    // the colour a vertex carries: the material of a lit draw (the GE multiplies the light sum by
+    // it and takes its alpha), the rasterised colour of an unlit one
+    u32 baseColor, vmask;
+    if (lit && c->ambSrc != 0) {
+        // (vertex colour + lights) x register material: the vertex colour is the GE's ambient
+        // material, the register the global ambient and the diffuse material
+        const u32 reg = chanMatColor[ch];
+        baseColor = 0xFFFFFFFFu;
+        vmask = hasColor ? (0x00FFFFFFu | (ca->matSrc != 0 ? 0xFF000000u : 0)) : 0;
+        nat.ambient = (reg & 0x00FFFFFFu) | (ca->matSrc == 0 ? (reg & 0xFF000000u) : 0xFF000000u);
+        nat.colorMaterial = 1;
+        nat.material = reg | 0xFF000000u;
+    } else if (lit) {
+        // (register ambient + lights) x material: the material (vertex or register colour, with the
+        // alpha channel's own source) is composed into the vertex colour
+        const u32 reg = chanMatColor[ch];
+        baseColor = (c->matSrc == 0 ? (reg & 0x00FFFFFFu) : 0x00FFFFFFu) | (ca->matSrc == 0 ? (reg & 0xFF000000u) : 0xFF000000u);
+        vmask = hasColor ? ((c->matSrc != 0 ? 0x00FFFFFFu : 0) | (ca->matSrc != 0 ? 0xFF000000u : 0)) : 0;
+        u32 amb = chanAmbColor[ch];
+        if (ambientExtra[0] + ambientExtra[1] + ambientExtra[2] > 0.0f) {
+            u32 r = (amb & 0xFF) + (u32) (ambientExtra[0] + 0.5f), g2 = ((amb >> 8) & 0xFF) + (u32) (ambientExtra[1] + 0.5f), b = ((amb >> 16) & 0xFF) + (u32) (ambientExtra[2] + 0.5f);
+            amb = (r > 255 ? 255 : r) | ((g2 > 255 ? 255 : g2) << 8) | ((b > 255 ? 255 : b) << 16);
+        }
+        nat.ambient = amb | 0xFF000000u;
+        nat.colorMaterial = 3;
+        nat.material = 0xFFFFFFFFu;
+    } else {
+        baseColor = defaultColor();
+        vmask = hasColor ? 0xFFFFFFFFu : 0;
+    }
+    const u32 constMask = drawConstColorOn ? 0x00FFFFFFu : 0;
+    const u32 constColor = drawConstColor & 0x00FFFFFFu;
+    const f32 ku = texType == 4 ? 1.0f : 1.0f / (f32) (1u << (f->tex[0].frac & 31));
+    const u8* posBase = arrayBase[A_POS]; const u32 posStride = arrayStride[A_POS];
+    const u8* nrmBase = arrayBase[A_NRM]; const u32 nrmStride = arrayStride[A_NRM];
+    const u8* clrBase = arrayBase[A_CLR0]; const u32 clrStride = arrayStride[A_CLR0];
+    const u8* texBase = arrayBase[A_TEX0]; const u32 texStride = arrayStride[A_TEX0];
+    u8 qbuf[4][40] __attribute__((aligned(4)));
+    u8* d = out;
+    const u32 tGather = usNow();
+    for (u32 n = 0; n < count; n++, sp += streamBytes) {
+        u8* v = quads ? qbuf[n & 3] : d;
+        if (hasTex) {
+            const u8* p = attrPtr(sp + texOff, texMode, texBase, texStride);
+            f32 tu, tv;
+            switch (texType) {
+            case 3: tu = (f32) (s16) ((p[0] << 8) | p[1]) * ku; tv = (f32) (s16) ((p[2] << 8) | p[3]) * ku; break;
+            case 4: tu = bef32(p); tv = bef32(p + 4); break;
+            case 2: tu = (f32) ((p[0] << 8) | p[1]) * ku; tv = (f32) ((p[2] << 8) | p[3]) * ku; break;
+            case 1: tu = (f32) (s8) p[0] * ku; tv = (f32) (s8) p[1] * ku; break;
+            default: tu = (f32) p[0] * ku; tv = (f32) p[1] * ku; break;
+            }
+            ((f32*) v)[0] = tu;
+            ((f32*) v)[1] = tv;
+        }
+        u32 col = baseColor;
+        if (vmask) {
+            const u8* p = attrPtr(sp + clrOff, clrMode, clrBase, clrStride);
+            int sz;
+            const u32 vc = clrType == 5 ? ((u32) p[0] | ((u32) p[1] << 8) | ((u32) p[2] << 16) | ((u32) p[3] << 24)) : readColor(p, clrType, 1, &sz);
+            col = (vc & vmask) | (baseColor & ~vmask);
+        }
+        *(u32*) (v + clrOut) = (col & ~constMask) | (constColor & constMask);
+        if (lit) {
+            const u8* p = attrPtr(sp + nrmOff, nrmMode, nrmBase, nrmStride);
+            if (nrmType == 1) {
+                v[nrmOut] = p[0]; v[nrmOut + 1] = p[1]; v[nrmOut + 2] = p[2];
+            } else if (nrmType == 3) {
+                u16* q = (u16*) (v + nrmOut);
+                q[0] = be16(p); q[1] = be16(p + 2); q[2] = be16(p + 4);
+            } else {
+                f32* q = (f32*) (v + nrmOut);
+                q[0] = bef32(p); q[1] = bef32(p + 4); q[2] = bef32(p + 8);
+            }
+        }
+        {
+            const u8* p = attrPtr(sp + posOff, posMode, posBase, posStride);
+            if (pos8) {
+                v[posOut] = p[0]; v[posOut + 1] = p[1]; v[posOut + 2] = p[2];
+            } else if (pos16) {
+                u16* q = (u16*) (v + posOut);
+                q[0] = be16(p); q[1] = be16(p + 2); q[2] = be16(p + 4);
+            } else {
+                f32* q = (f32*) (v + posOut);
+                q[0] = bef32(p); q[1] = bef32(p + 4); q[2] = bef32(p + 8);
+            }
+        }
+        if (!quads) {
+            d += stride;
+        } else if ((n & 3) == 3) {  // a quad: two triangles
+            memcpy(d, qbuf[0], stride); memcpy(d + stride, qbuf[1], stride); memcpy(d + 2 * stride, qbuf[2], stride);
+            memcpy(d + 3 * stride, qbuf[0], stride); memcpy(d + 4 * stride, qbuf[2], stride); memcpy(d + 5 * stride, qbuf[3], stride);
+            d += 6 * stride;
+        }
+    }
+    port_gx_us_gather += usNow() - tGather;
+    port_gx_stat_native_draws++;
+    // the GE's side of it
+    nat.vtype = vtype;
+    // the GE reads 16-bit positions as value / 32768 and 8-bit ones as value / 128; the game's are value / 2^frac
+    const int unit = pos16 ? 15 : pos8 ? 7 : -1, pf = f->pos.frac & 31;
+    const f32 k = unit < 0 ? 1.0f : pf <= unit ? (f32) (1u << (unit - pf)) : 1.0f / (f32) (1u << (pf - unit));
+    for (int r = 0; r < 3; r++) {
+        nat.model[r * 4 + 0] = m[r * 4 + 0] * k;
+        nat.model[r * 4 + 1] = m[r * 4 + 1] * k;
+        nat.model[r * 4 + 2] = m[r * 4 + 2] * k;
+        nat.model[r * 4 + 3] = m[r * 4 + 3];
+    }
+    nat.texMatrix = texMatrix;
+    nat.texScale[0] = boundSu; nat.texScale[1] = boundSv;
+    if (texMatrix) {
+        const f32* r0 = &mtxMem[g->mtx][0];
+        const f32* r1 = &mtxMem[g->mtx + 1][0];
+        nat.texMtx[0] = r0[0] * boundSu; nat.texMtx[1] = r0[1] * boundSu; nat.texMtx[2] = (r0[2] + r0[3]) * boundSu;
+        nat.texMtx[3] = r1[0] * boundSv; nat.texMtx[4] = r1[1] * boundSv; nat.texMtx[5] = (r1[2] + r1[3]) * boundSv;
+    }
+    nat.lit = lit;
+    u32 lightSel = 0;  // (which of the game's lights: a draw may leave faint ones out)
+    for (int i = 0; i < nat.nLights; i++) lightSel |= 1u << lightIdx[i];
+    nat.lightSig = (lightGen << 9) | (lightSel << 1) | (u32) (ch & 1);
+    static const int primTbl[5] = {PG_TRIANGLES, PG_TRIANGLES, PG_TRIANGLES, PG_TRIANGLE_STRIP, PG_TRIANGLE_FAN};
+    port_gx_stat_native += count;
+    pg_draw_native(primTbl[prim], (int) outCount, out, (int) (outCount * stride), &nat);
+    return end;
+}
+
 static const u8* drawVerticesImpl(Parser* s, int prim, int vf, u32 count)
 {
     if (vf > 7 || count == 0) return s->p;
+    if (port_gx_native && s->bigEndian && !port_gx_flags && !pg_dump_pending()) {
+        const u32 tn = usNow();
+        const u8* r = drawNative(s, prim, vf, count);
+        port_gx_us_native += usNow() - tn;
+        if (r) return r;
+    }
+    port_gx_stat_cpu += count;
+    port_gx_stat_cpu_draws++;
     const Vat* f = &vat[vf];
     int quads = prim == 0;
     u32 outCount = quads ? count / 4 * 6 : count;
@@ -1084,7 +1587,7 @@ static const u8* drawVerticesImpl(Parser* s, int prim, int vf, u32 count)
             tn[2] = nm[6] * nx + nm[7] * ny + nm[8] * nz;
             f32 len = sqrtf(tn[0] * tn[0] + tn[1] * tn[1] + tn[2] * tn[2]);
             if (len > 0.0f) { tn[0] /= len; tn[1] /= len; tn[2] /= len; }
-            v.color = lightColor(ch, v.color, tn, v.x, v.y, v.z);
+            v.color = (port_gx_flags & 2) ? 0xFFFFFFFFu : lightColor(ch, v.color, tn, v.x, v.y, v.z);
         } else if (ch >= 0 && chan[ch].enable) {
             // lit without normals: ambient only
             static const f32 up[3] = {0.0f, 0.0f, 0.0f};
@@ -1129,14 +1632,72 @@ static const u8* drawVerticesImpl(Parser* s, int prim, int vf, u32 count)
             return s->p;
         }
     }
+    if ((port_gx_flags & 8) && (count == 22 || count == 4)) return s->p;  // debugger: skip the small strips / quads
+    if ((port_gx_flags & 64) && count == 1024) return s->p;              // debugger: skip the screen quad grids
+    if ((port_gx_flags & 2048) && count == 4 && prim != 0) return s->p;  // debugger: skip 4-vertex strips / fans
+    if ((port_gx_flags & 4096) && count == 4 && prim == 0) return s->p;  // debugger: skip quads
+    if ((port_gx_flags & 65536) && count == 4 && prim == 0 && !s->bigEndian) return s->p;  // debugger: skip immediate-mode quads (sprites)
+    if (count == 4 && prim == 0 && !s->bigEndian) {  // debugger: bisect the immediate quads by their order in the frame
+        u32 idx = immQuadIndex++;
+        u32 th = ((port_gx_flags >> 20) & 0xFF) * 2;  // bits 20..27: the threshold, in pairs of quads
+        if ((port_gx_flags & 0x10000000) && idx < th) return s->p;
+        if ((port_gx_flags & 0x80000000u) && idx >= th) return s->p;
+        if ((port_gx_flags & 0x800000) && idx < 128) {
+            static u32 nTr;
+            int si = textureStage();
+            const TexObjPort* t = (si >= 0 && tev[si].map < 8) ? texMap[tev[si].map] : NULL;
+            if (++nTr <= 128) port_trace("[gx] imm quad %u: proj %d tex %p %ux%u fmt %d col %08x blend %d %d %d v0 %g %g %g v2 %g %g %g\n", idx, projType, t ? t->data : NULL, t ? t->width : 0, t ? t->height : 0, t ? t->format : -1,
+                                        out[0].color, blendType, blendSrc, blendDst, out[0].x, out[0].y, out[0].z, out[2].x, out[2].y, out[2].z);
+        }
+    }
+    if ((port_gx_flags & 0x2000000) && colorMaskBits) return s->p;                             // debugger: skip the alpha-only passes
+    if ((port_gx_flags & 0x20000000) && count == 4 && prim == 0 && textureStage() < 0) return s->p;  // debugger: skip untextured quads
+    if ((port_gx_flags & 0x4000000) && blendType == 1 && blendSrc == 1 && blendDst == 1 && count == 4) return s->p;  // debugger: skip additive quads
+    if (port_gx_flags & (512 | 1024 | 0x40000000)) {                      // debugger: skip draws by texture (96x96, 128x128 I8, 256x256 CMPR quads)
+        int si = textureStage();
+        const TexObjPort* t = (si >= 0 && tev[si].map < 8) ? texMap[tev[si].map] : NULL;
+        if (t && (port_gx_flags & 512) && t->width == 96 && t->height == 96) return s->p;
+        if (t && (port_gx_flags & 1024) && t->width == 128 && t->height == 128 && t->format == 1) return s->p;
+        if (t && (port_gx_flags & 0x40000000) && t->width == 256 && t->height == 256 && t->format == 14 && count == 4) return s->p;
+    }
+    if (port_gx_flags & 128) {                                            // debugger: save the 96x96 I8 texture of a draw (as the file has it)
+        int si = textureStage();
+        const TexObjPort* t = (si >= 0 && tev[si].map < 8) ? texMap[tev[si].map] : NULL;
+        if (t && GC_PTR_OK(t->data) && t->width == 256 && t->height == 256 && t->format == 14 && count == 4) {
+            port_gx_flags &= ~128u;
+            char path[80];
+            sprintf(path, "ms0:/PSP/GAME/RE4/tex_%ux%u_f%d.raw", t->width, t->height, t->format);
+            pg_save_raw(path, t->data, texBytes(t));
+        }
+    }
+    if ((port_gx_flags & 32768) && count == 4 && prim == 0 && o == 6) {  // debugger: skip (and name) the quads that cover most of the screen
+        f32 minx = 1e30f, maxx = -1e30f, miny = 1e30f, maxy = -1e30f;
+        for (u32 i = 0; i < o; i++) {
+            f32 x = out[i].x, y = out[i].y;
+            if (projType == 0) { f32 d = -out[i].z; if (d < 1.0f) d = 1.0f; x = x / d * projection[0][0]; y = y / d * projection[1][1]; }
+            else { x = x * projection[0][0] + projection[0][3]; y = y * projection[1][1] + projection[1][3]; }
+            if (x < minx) minx = x; if (x > maxx) maxx = x; if (y < miny) miny = y; if (y > maxy) maxy = y;
+        }
+        if (maxx - minx > 1.0f && maxy - miny > 1.0f) {
+            static u32 nTr;
+            if (++nTr <= 30) {
+                int si = textureStage();
+                const TexObjPort* t = (si >= 0 && tev[si].map < 8) ? texMap[tev[si].map] : NULL;
+                port_trace("[gx] big quad: ndc x %g..%g y %g..%g z %g proj %d tex %p %ux%u fmt %d col %08x blend %d %d %d\n", minx, maxx, miny, maxy, out[0].z, projType,
+                           t ? t->data : NULL, t ? t->width : 0, t ? t->height : 0, t ? t->format : -1, out[0].color, blendType, blendSrc, blendDst);
+            }
+            return s->p;
+        }
+    }
     applyDrawState(hasColor);
+    if ((port_gx_flags & 16384) && count == 4 && prim == 0) pg_texture_off();  // debugger: quads untextured
     if (drawConstColorOn) {
         for (u32 i = 0; i < o; i++) out[i].color = (out[i].color & 0xFF000000u) | (drawConstColor & 0x00FFFFFFu);
     }
     static const int primTbl[8] = {PG_TRIANGLES, PG_TRIANGLES, PG_TRIANGLES, PG_TRIANGLE_STRIP, PG_TRIANGLE_FAN, PG_LINES, PG_LINE_STRIP, PG_POINTS};
     if (pg_dump_pending()) {  // a frame dump was requested (pg_request_dump): describe the draws of this frame
-        port_trace("[draw] prim %d vf %d count %u -> %u verts, be %d, mtx %d, pos type %d frac %d, tex %s, chan %d lit %d\n", prim, vf, count, o,
-                   s->bigEndian, currentMtx, f->pos.type, f->pos.frac, numTexGens ? "on" : "off", ch, lit);
+        port_trace("[draw] prim %d vf %d count %u -> %u verts, be %d, mtx %d, pos type %d frac %d, tex %s, chan %d lit %d, list caller %p (%u bytes)\n", prim, vf, count, o,
+                   s->bigEndian, currentMtx, f->pos.type, f->pos.frac, numTexGens ? "on" : "off", ch, lit, s->bigEndian ? lastListCaller : NULL, lastListBytes);
         {
             int si = textureStage();
             const TevStage* st = &tev[si < 0 ? 0 : si];
@@ -1162,7 +1723,75 @@ static const u8* drawVerticesImpl(Parser* s, int prim, int vf, u32 count)
             port_trace("[draw]   v%u %g %g %g uv %g %g col %08x\n", i, out[i].x, out[i].y, out[i].z, out[i].u, out[i].v, out[i].color);
         }
     }
-    pg_draw(primTbl[prim & 7], (int) o, out);
+    {
+        // Geometry behind the near plane: the GameCube clips it, the GE does not (a vertex with
+        // w <= 0 draws garbage across the screen). Triangles are clipped here against z = -near.
+        int pgPrim = primTbl[prim & 7];
+        PgVertex* verts = out;
+        u32 nv = o;
+        if (port_profile && projType == 0 && s->bigEndian) {  // experiment: how much of a frame is wholly outside one frustum plane
+            extern unsigned int port_gx_stat_offscreen, port_gx_stat_onscreen;
+            u32 outL = 0, outR = 0, outT = 0, outB = 0, outF = 0;
+            const f32 p00 = projection[0][0], p02 = projection[0][2], p11 = projection[1][1], p12 = projection[1][2], m22 = projection[2][2], m23 = projection[2][3];
+            for (u32 i = 0; i < nv; i++) {
+                const f32 w = -out[i].z, x = p00 * out[i].x + p02 * out[i].z, y = p11 * out[i].y + p12 * out[i].z;
+                if (x < -w) outL++;
+                if (x > w) outR++;
+                if (y < -w) outB++;
+                if (y > w) outT++;
+                if (m22 * out[i].z + m23 > 0.0f) outF++;
+            }
+            if (outL == nv || outR == nv || outT == nv || outB == nv || outF == nv) port_gx_stat_offscreen += nv; else port_gx_stat_onscreen += nv;
+        }
+        {
+            // GX clips against the z range of its clip space ([-1, 0] in the GameCube's
+            // convention); the GE clamps the depth instead. A draw wholly beyond the near or the
+            // far plane is dropped here: a full-screen quad placed a hair beyond the near plane
+            // (the game draws such) would otherwise fill the depth buffer with "nearest" and hide
+            // the scene behind it.
+            const f32 m22 = projection[2][2], m23 = projection[2][3];
+            u32 beforeNear = 0, beyondFar = 0;
+            if (m22 == 0.0f && m23 == 0.0f) nv = 0;  // no projection loaded (the host harness): nothing to clip against
+            for (u32 i = 0; i < nv; i++) {
+                f32 z = out[i].z;
+                f32 zc, wc;
+                if (projType == 0) { zc = m22 * z + m23; wc = -z; }
+                else { zc = m22 * z + m23; wc = 1.0f; }
+                if (wc <= 0.0f) { beforeNear++; continue; }  // (behind the eye: the near-plane clipper below handles the perspective case)
+                if (zc < -wc * 1.000001f) beforeNear++;
+                else if (zc > wc * 0.000001f) beyondFar++;
+            }
+            if (projType == 1 && nv == 6 && (beforeNear || beyondFar)) {
+                static u32 nTr;
+                if (++nTr <= 20) port_trace("[gx] ortho quad z %g m22 %g m23 %g: %u before near, %u beyond far of %u -> %s\n", out[0].z, m22, m23, beforeNear, beyondFar, nv,
+                                            (beforeNear == nv || beyondFar == nv) ? "dropped" : "kept");
+            }
+            if (nv && (beforeNear == nv || beyondFar == nv)) return s->p;
+            nv = o;
+        }
+        if (projType == 0 && (projection[2][2] != 0.0f || projection[2][3] != 0.0f) &&
+            (pgPrim == PG_TRIANGLES || pgPrim == PG_TRIANGLE_STRIP || pgPrim == PG_TRIANGLE_FAN)) {
+            f32 zn = nearPlane();
+            u32 behind = 0;
+            for (u32 i = 0; i < nv; i++) if (out[i].z > zn) behind++;
+            if (behind) {
+                u32 tris = pgPrim == PG_TRIANGLES ? nv / 3 : (nv >= 3 ? nv - 2 : 0);
+                PgVertex* cl = (PgVertex*) pg_get_memory((int) (tris * 6 * sizeof(PgVertex)));  // a clipped triangle is at most two
+                if (!cl) return s->p;
+                u32 n = 0;
+                for (u32 t = 0; t < tris; t++) {
+                    u32 a, b, c;
+                    if (pgPrim == PG_TRIANGLES) { a = t * 3; b = a + 1; c = a + 2; }
+                    else if (pgPrim == PG_TRIANGLE_STRIP) { a = t; b = t + 1; c = t + 2; if (t & 1) { u32 x = b; b = c; c = x; } }
+                    else { a = 0; b = t + 1; c = t + 2; }
+                    n += clipTriangleNear(&out[a], &out[b], &out[c], zn, cl + n);
+                }
+                if (n == 0) return s->p;
+                pgPrim = PG_TRIANGLES; verts = cl; nv = n;
+            }
+        }
+        pg_draw(pgPrim, (int) nv, verts);
+    }
     return s->p;
 }
 
@@ -1280,11 +1909,23 @@ void GXSetCopyClear(GXColor color, u32 z)
     copyClearZ = z;
 }
 
+static const void* dlSeen[4096];
+static const void* dlCaller[4096];
+static u32 dlFirst[4096];
+static u32 dlCalls, dlDistinct, dlBytes, dlDistinctBytes;
 void GXCopyDisp(void* dest, u8 clear)
 {
     if (!inited) GXInit_port();
     immFlush();
     pg_finish();
+    flushDeferredFree();  // the GE is done with the frame's textures
+    immQuadIndex = 0;
+    if (port_profile) {
+        static u32 nf;
+        if ((++nf & 127) == 0) port_trace("[gx] display lists this frame: %u calls (%u KB), %u distinct (%u KB)\n", dlCalls, dlBytes / 1024, dlDistinct, dlDistinctBytes / 1024);
+        memset(dlSeen, 0, sizeof(dlSeen));
+        dlCalls = dlDistinct = dlBytes = dlDistinctBytes = 0;
+    }
     pg_swap();
     drawOverlay();
     pg_start();
@@ -1459,11 +2100,27 @@ static void callRecorded(const u8* p, const u8* end)
 void GXCallDisplayList(void* list, u32 nbytes)
 {
     if (!inited) GXInit_port();
+    lastListCaller = __builtin_return_address(0);
+    lastListBytes = nbytes;
     immFlush();
     if (nbytes > 0x400000 || list == NULL) {  // a size from an unconverted header: walking it would take seconds
         static u32 nb;
         if (++nb <= 20) port_trace("[gx] display list %p of %u bytes refused\n", list, (unsigned) nbytes);
         return;
+    }
+    if (port_profile) {  // experiment: is a display list drawn more than once a frame?
+        u32 h = (((u32) (uintptr_t) list) >> 5) & 4095;
+        dlCalls++; dlBytes += nbytes;
+        while (dlSeen[h] && dlSeen[h] != list) h = (h + 1) & 4095;
+        if (!dlSeen[h]) { dlSeen[h] = list; dlDistinct++; dlDistinctBytes += nbytes; dlFirst[h] = dlCalls; dlCaller[h] = lastListCaller; }
+        else {
+            static u32 nTr;
+            if (nbytes > 4096 && ++nTr <= 24) {
+                int si = textureStage();
+                port_trace("[gx] list %p (%u bytes) again: call %u from %p, first was call %u from %p; blend %d %d %d cull %d tev stages %d tex stage %d colour mask %x alpha mask %x mtx %g %g %g\n", list, (unsigned) nbytes, dlCalls, lastListCaller, dlFirst[h], dlCaller[h],
+                           blendType, blendSrc, blendDst, cullMode, numTevStages, si, (unsigned) colorMaskBits, (unsigned) alphaMaskBits, mtxMem[currentMtx][3], mtxMem[currentMtx][7], mtxMem[currentMtx][11]);
+            }
+        }
     }
     const u8* p = (const u8*) list;
     const u8* end = p + nbytes;
@@ -1533,21 +2190,34 @@ void GXSetZMode(u8 compare_enable, int func, u8 update_enable)
 
 void GXSetZCompLoc(u8 before_tex) {}
 
-void GXSetBlendMode(int type, int src_factor, int dst_factor, int op)
+// The blend the GE gets: the game's blend mode, or, while the colour update is off (the filters
+// write the frame's alpha alone: filter03), a blend that leaves the colour as it is. The GE
+// writes the source alpha whatever the blend, so the alpha-only pass still lands; the pixel mask
+// alone is not honoured everywhere.
+static void applyBlend(void)
 {
-    blendType = type; blendSrc = src_factor; blendDst = dst_factor;
     if (!inited) return;
+    if (colorMaskBits) {
+        pg_blend(1, PG_ADD, PG_FIX, PG_FIX, 0x000000, 0xFFFFFF);
+        return;
+    }
     static const int srcTbl[8] = {PG_FIX, PG_FIX, PG_SRC_COLOR, PG_ONE_MINUS_SRC_COLOR, PG_SRC_ALPHA, PG_ONE_MINUS_SRC_ALPHA, PG_DST_ALPHA, PG_ONE_MINUS_DST_ALPHA};
     static const int dstTbl[8] = {PG_FIX, PG_FIX, PG_DST_COLOR, PG_ONE_MINUS_DST_COLOR, PG_SRC_ALPHA, PG_ONE_MINUS_SRC_ALPHA, PG_DST_ALPHA, PG_ONE_MINUS_DST_ALPHA};
-    u32 fixS = src_factor == 1 ? 0xFFFFFF : 0;
-    u32 fixD = dst_factor == 1 ? 0xFFFFFF : 0;
-    if (type == 1) {        // GX_BM_BLEND
-        pg_blend(1, PG_ADD, srcTbl[src_factor & 7], dstTbl[dst_factor & 7], fixS, fixD);
-    } else if (type == 3) { // GX_BM_SUBTRACT: dst - src
+    u32 fixS = blendSrc == 1 ? 0xFFFFFF : 0;
+    u32 fixD = blendDst == 1 ? 0xFFFFFF : 0;
+    if (blendType == 1) {        // GX_BM_BLEND
+        pg_blend(1, PG_ADD, srcTbl[blendSrc & 7], dstTbl[blendDst & 7], fixS, fixD);
+    } else if (blendType == 3) { // GX_BM_SUBTRACT: dst - src
         pg_blend(1, PG_REVERSE_SUBTRACT, PG_FIX, PG_FIX, 0xFFFFFF, 0xFFFFFF);
     } else {
         pg_blend(0, 0, 0, 0, 0, 0);
     }
+}
+
+void GXSetBlendMode(int type, int src_factor, int dst_factor, int op)
+{
+    blendType = type; blendSrc = src_factor; blendDst = dst_factor;
+    applyBlend();
 }
 
 void GXSetCullMode(int mode)
@@ -1571,6 +2241,7 @@ void GXSetColorUpdate(u8 enable)
 {
     colorMaskBits = enable ? 0 : 0x00FFFFFF;
     if (inited) pg_pixel_mask(colorMaskBits | alphaMaskBits);
+    applyBlend();
 }
 
 void GXSetAlphaUpdate(u8 enable)
@@ -1661,21 +2332,32 @@ void GXSetTexCoordGen2(int dst, int func, int src, u32 mtx, u8 normalize, u32 pt
     texGen[dst].mtx = mtx; texGen[dst].postMtx = pt;
 }
 
+// GX_COLOR0 / GX_COLOR1 / GX_ALPHA0 / GX_ALPHA1 (0..3) set one channel; GX_COLOR0A0 / GX_COLOR1A1
+// (4, 5) set the colour channel and its alpha channel together (the effects and the HUD use those).
 void GXSetChanCtrl(int ch, u8 enable, int amb_src, int mat_src, u32 light_mask, int diff_fn, int attn_fn)
 {
-    if (ch < 0 || ch > 3) return;
-    Chan* c = &chan[ch];
-    c->enable = enable; c->ambSrc = (u8) amb_src; c->matSrc = (u8) mat_src;
-    c->lightMask = light_mask; c->diffFn = (u8) diff_fn; c->attnFn = (u8) attn_fn;
+    int first, last;
+    lightGen++;
+    if (ch >= 0 && ch <= 3) { first = last = ch; }
+    else if (ch == 4) { first = 0; last = 2; }
+    else if (ch == 5) { first = 1; last = 3; }
+    else return;
+    for (int i = first; i <= last; i += 2) {
+        Chan* c = &chan[i];
+        c->enable = enable; c->ambSrc = (u8) amb_src; c->matSrc = (u8) mat_src;
+        c->lightMask = light_mask; c->diffFn = (u8) diff_fn; c->attnFn = (u8) attn_fn;
+    }
 }
 // GX_COLOR0 / GX_ALPHA0 / GX_COLOR0A0 (0, 2, 4) set pair 0; GX_COLOR1 / GX_ALPHA1 / GX_COLOR1A1 pair 1.
 void GXSetChanMatColor(int ch, GXColor color)
 {
+    lightGen++;
     u32 c = ((u32) color.a << 24) | ((u32) color.b << 16) | ((u32) color.g << 8) | color.r;
     if (ch == 0 || ch == 2 || ch == 4) chanMatColor[0] = c; else chanMatColor[1] = c;
 }
 void GXSetChanAmbColor(int ch, GXColor color)
 {
+    lightGen++;
     u32 c = ((u32) color.a << 24) | ((u32) color.b << 16) | ((u32) color.g << 8) | color.r;
     if (ch == 0 || ch == 2 || ch == 4) chanAmbColor[0] = c; else chanAmbColor[1] = c;
 }
@@ -1728,6 +2410,7 @@ void GXInitLightDistAttn(GXLightObj* obj, f32 ref_dist, f32 ref_br, int dist_fn)
 }
 void GXLoadLightObjImm(GXLightObj* obj, u32 light)
 {
+    lightGen++;
     for (int i = 0; i < 8; i++) {
         if (light & (1u << i)) lights[i] = *lightOf(obj);
     }
@@ -1830,12 +2513,26 @@ void GXCopyTex(void* dest, u8 clear)
         r->buf = (u32*) ALIGNED_ALLOC(pw * ph * 4);
         if (!r->buf) return;
         r->dest = dest; r->w = copyDstW; r->h = copyDstH; r->pw = (u16) pw; r->ph = (u16) ph;
+        memset(texMemo, 0, sizeof(texMemo));  // (a texture at that address is the copy from now on)
     }
     // GX_CTF_A8 (0x27) keeps the alpha, the Z formats (GX_TF_Z8 0x11 .. GX_TF_Z24X8 0x16) the depth
     int mode = copyDstFmt == 0x27 ? 1 : (copyDstFmt >= 0x11 && copyDstFmt <= 0x16) ? 2 : 0;
     port_gx_stat_copies++;
+    {
+        static u32 nTr;
+        if (pg_dump_pending() || ++nTr <= 12)
+            port_trace("[gx] GXCopyTex dest %p fmt %02x %ux%u (buffer %ux%u) from %u,%u %ux%u mode %d clear %d\n", dest, copyDstFmt, copyDstW, copyDstH, r->pw, r->ph,
+                       (unsigned) copySrc[0], (unsigned) copySrc[1], (unsigned) copySrc[2], (unsigned) copySrc[3], mode, clear);
+    }
+    pg_texture_forget();
     pg_copy_frame(r->buf, r->pw, r->ph, (int) (copySrc[0] * sx()), (int) (copySrc[1] * sy()),
                   (int) (copySrc[2] * sx()), (int) (copySrc[3] * sy()), mode);
+    if ((port_gx_flags & 16) && r->pw == 64) {  // debugger: save the 64x64 (alpha) copy buffer (8888)
+        port_gx_flags &= ~16u;
+        char path[64];
+        sprintf(path, "ms0:/PSP/GAME/RE4/copy_%ux%u.raw", r->pw, r->ph);
+        pg_save_raw(path, r->buf, r->pw * r->ph * 4);
+    }
     if (clear) {
         pg_clear(copyClearColor, 65535, 1, 1);
     }

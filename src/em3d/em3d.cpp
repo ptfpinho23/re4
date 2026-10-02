@@ -148,7 +148,7 @@ void cEm3d::setNoSuspend(int on)
 // EmInitFunc: placement-constructs the helicopter in the cEm work.
 void Em3dInit(cEm* em)
 {
-    new (em) cEm3d();
+    new (em) cEm3d;
 }
 
 // A weapon hit on the helicopter (cEm::dmHit, no damage taken): when no radio line is running the

@@ -150,7 +150,7 @@ extern "C" void _unresolved()
 // EmInitFunc of the module: constructs the cEm25 class in the manager's work.
 void Em25Init(cEm* em)
 {
-    new (em) cEm25();
+    new (em) cEm25;
 }
 
 // Per-frame damage check (cEm25::move): a floor parasite (Mode 0) in an explosion / fire volume burns

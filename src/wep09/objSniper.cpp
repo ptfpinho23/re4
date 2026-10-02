@@ -32,7 +32,7 @@ const u8 sniper_tbl[3] = { 0x14, 0, 0 };
 // ObjInitFunc[0x28]: placement-constructs the class in the work cObjMgr::construct hands over.
 void ObjSniper_init(cObj* obj)
 {
-    new (obj) cObjSniper();
+    new (obj) cObjSniper;
 }
 
 // cObjWep::init override (equipWeapon, parent = the player): weapon list id 0x2E, model 0xA /

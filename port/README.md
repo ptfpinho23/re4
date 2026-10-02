@@ -287,9 +287,71 @@ model / view / projection matrices and lights, and the models' vertex arrays con
 load to a native GE vertex format (the disc's display lists reference indexed arrays, which
 the GE can consume directly as 16-bit indexed vertices).
 
-Open: skinned models show a few black triangles (Leon's face), "::destroy() ERROR, INVALID"
-on the debug console, START during the cutscene (the event skip fast-forward) ends the
-emulator; the synthesized debug font draws with the wrong glyphs (the glyph index mapping);
-the debug menu of this build has to be dismissed with cross; thin strips at the screen edges on
-2D screens; the movie player and the sound synthesis are stubs.
+2026-09-25: the cutscene can be skipped with START and the game goes on into the first
+gameplay room (r100, the village entrance), where the villagers' modules (em12, em23) load and
+link. Fixed on the way:
+
+- `cManager<T>::destroy` compared the work pointer against the GameCube's memory range
+  literally (0x80000000..0x82FFFFFF): on the PSP nothing was ever destroyed, the pools filled
+  up and `create` returned NULL (the light pool during the skip: the 0xdeadbeef crash).
+- The shape (facial) blend added big-endian deltas natively: Leon's face had black triangles.
+- A scenario task whose function returns kept `TASK_RUN` for ever in the port's wait loop.
+- `port_fix_sat` swapped runtime-built SATs (the window boxes) as if they were files, and
+  walked block trees without bounds; it now refuses non-file data and validates the blocks.
+- The floor attribute (FSE) and sound area (ESE) room files are read big-endian.
+- `EspGenPrmW / EspGenPrmH` (the effect record's word parameters) were plain u32/u16: the
+  cloth effect's wave range was 83 million, and `SINF`'s angle limiter looped for 11 s per
+  cloth per frame. `LIMIT_ANGLE` now reduces far-out angles with fmodf first.
+- The effect pre-run at room start (`EspGenLoopMove`, 1024 frames in the village) is capped at
+  64 on the port.
+- `iTaskScheduler` runs the background (disc) task with interrupts disabled, which is the
+  port's global lock: it is released while the task runs.
+- The background disc task is no longer suspended with `sceKernelSuspendThread` at the retrace
+  (a thread inside a kernel wait runs on when the wait ends, and then shared the DVD staging
+  buffer with the main thread's own reads: the enemy archive read restarted and hung). It
+  parks itself at `port_isr_checkpoint` in the read loop, and the main thread waits until it
+  has parked.
+- `ppsspp.py`: `threads` (every thread's registers and stack), `breakif ADDR COND`; breakpoints
+  set after the JIT compiled the code do not stop it (set them at boot); `-t` is the
+  emulator's timeout in emulated seconds (now 100000).
+- The build uses `-mno-check-zero-division` (the GameCube does not trap either).
+
+Later on 2026-09-25 the village (r100) became playable: Leon walks, the camera cuts by area,
+the villagers (em12) and crows (em23) are up, the life gauge and the ammo count draw. Fixed on
+the way:
+
+- The module link step (`modlink.py`) depended on target names only, so the linked module
+  objects were a day old: every fix in a REL module's code or in a header it uses had been
+  missing from the EBOOT. The custom command now depends on the objects.
+- `new (work) cEmXX()` value-initialises under C++14 (zeroes the whole work, including the
+  archive pointer the manager had just stored, which GCC 2.95 did not do): all 133 placement
+  news are `new (work) cEmXX` now.
+- `GXSetChanCtrl` dropped the paired channel ids (GX_COLOR0A0 / GX_COLOR1A1, 23 call sites):
+  every sprite drawn through them got white, opaque vertex colours; the screen-space dust /
+  leaf overlay (esp47) then covered the village with an opaque bark texture.
+- A full-screen quad the game places a hair beyond the near plane in the ortho projection
+  (which GX clips away) reached the GE, which clamps depth instead: draws wholly outside the
+  clip z range are dropped, and perspective triangles are clipped against the near plane on
+  the CPU (`clipTriangleNear`).
+- CMPR textures with three-colour (punch-through) blocks become DXT3 with a 4-bit alpha; the
+  GE's DXT1 has no transparent mode.
+- Frame copies that shrink the frame box-filter their source (the filters' blur pyramids);
+  the filters' alpha-only passes (colour update off) keep the colour through the blend, and
+  evicted textures are freed only after the frame's GE work.
+- The port's on-screen console is opt-in (`overlay` in port.txt): it landed in the frame's
+  alpha, which the filters read back.
+- The effect path data (path.h) and the effect area list are byte-swapped once at lookup;
+  `LIMIT_ANGLE` reduces far-out angles with fmodf; the effect record's word parameters are
+  big-endian (the cloth wave range was 83 million: 11 s per cloth per frame).
+- A background (disc) task parks itself at `port_isr_checkpoint` when the retrace suspends it;
+  `iTaskScheduler` releases the interrupt lock while it runs.
+- `tools/port/ppsspp.py`: `threads`, `breakif`, poke-able `port_dump_now` (a frame dump with
+  every draw traced) and `port_gx_flags` (draw skipping toggles for bisection; see port_gx.cpp
+  drawVerticesImpl).
+
+Open: the dust / leaf overlay is stronger than on the GameCube (alpha tuning); the debug
+build's on-screen log covers the top of the screen; the synthesized debug font draws with the
+wrong glyphs; thin strips at the screen edges on 2D screens; the movie player and the sound
+synthesis are stubs ("Illegal SE No"); the frame time (see above: ~1.4 s per village frame
+in emulated time, all CPU vertex assembly).
 

@@ -189,112 +189,112 @@ int cObjMgr::construct(cObj* pObj, ID id)
 {
     switch (id) {
     case ID_NORMAL:
-        pObj = new (pObj) cObj00();
+        pObj = new (pObj) cObj00;
         break;
     case ID_MAGAZINE:
-        pObj = new (pObj) cObj01();
+        pObj = new (pObj) cObj01;
         break;
     case ID_SCROLL:
-        pObj = new (pObj) cObjScr();
+        pObj = new (pObj) cObjScr;
         break;
     case ID_03:
-        pObj = new (pObj) cObj03();
+        pObj = new (pObj) cObj03;
         break;
     case ID_ESP:
-        pObj = new (pObj) cObj04();
+        pObj = new (pObj) cObj04;
         break;
     case ID_KABOOM:
-        pObj = new (pObj) cObj05();
+        pObj = new (pObj) cObj05;
         break;
     case ID_BOX:
-        pObj = new (pObj) cObjBox();
+        pObj = new (pObj) cObjBox;
         break;
     case ID_MISSILE:
-        pObj = new (pObj) cObj08();
+        pObj = new (pObj) cObj08;
         break;
     case ID_ESP2:
-        pObj = new (pObj) cObj09();
+        pObj = new (pObj) cObj09;
         break;
     case ID_WEP_ITEM:
-        pObj = new (pObj) cWepItem();
+        pObj = new (pObj) cWepItem;
         break;
     case ID_PL_WEAPON:
-        pObj = new (pObj) cObjWep();
+        pObj = new (pObj) cObjWep;
         break;
     case ID_EM12_WEAPON:
-        pObj = new (pObj) cObj12();
+        pObj = new (pObj) cObj12;
         break;
     case ID_LADDER:
-        pObj = new (pObj) cObjLadder();
+        pObj = new (pObj) cObjLadder;
         break;
     case ID_BELL:
-        pObj = new (pObj) cObjBell();
+        pObj = new (pObj) cObjBell;
         break;
     case ID_GATLING:
-        pObj = new (pObj) cObjGatling();
+        pObj = new (pObj) cObjGatling;
         break;
     case ID_EM10_PARASITE:
-        pObj = new (pObj) cObj16();
+        pObj = new (pObj) cObj16;
         break;
     case ID_EVENT:
-        pObj = new (pObj) cObj18();
+        pObj = new (pObj) cObj18;
         break;
     case ID_ITEM:
-        pObj = new (pObj) cItemObj();
+        pObj = new (pObj) cItemObj;
         break;
     case ID_WEP_GRENADE:
-        pObj = new (pObj) cObjGrenade();
+        pObj = new (pObj) cObjGrenade;
         break;
     case ID_SPEAR:
-        pObj = new (pObj) cObjSpear();
+        pObj = new (pObj) cObjSpear;
         break;
     case ID_FLOATISLAND:
-        pObj = new (pObj) cObj1c();
+        pObj = new (pObj) cObj1c;
         break;
     case ID_CHAIN:
-        pObj = new (pObj) cObjChain();
+        pObj = new (pObj) cObjChain;
         break;
     case ID_OBAMODEL:
-        pObj = new (pObj) cObjObaModel();
+        pObj = new (pObj) cObjObaModel;
         break;
     case ID_WEP_ROCKET:
-        pObj = new (pObj) cObjRocket();
+        pObj = new (pObj) cObjRocket;
         break;
     case ID_WEP_LAUNCHER:
-        pObj = new (pObj) cObjLauncher();
+        pObj = new (pObj) cObjLauncher;
         break;
     case ID_EM2B_PARASITE:
-        pObj = new (pObj) cObj26();
+        pObj = new (pObj) cObj26;
         break;
     case ID_WEP_GRE_FIRE:
-        pObj = new (pObj) cObjGreFire();
+        pObj = new (pObj) cObjGreFire;
         break;
     case ID_WEP_GRE_LIGHT:
-        pObj = new (pObj) cObjGreLight();
+        pObj = new (pObj) cObjGreLight;
         break;
     case ID_GONDOLA:
-        pObj = new (pObj) cObjGondola();
+        pObj = new (pObj) cObjGondola;
         break;
     case ID_ROBO:
-        pObj = new (pObj) cObjRobo();
+        pObj = new (pObj) cObjRobo;
         break;
     case ID_HELI_MISSILE:
-        pObj = new (pObj) cObjMissile();
+        pObj = new (pObj) cObjMissile;
         break;
     case ID_YAGURA:
-        pObj = new (pObj) cObjYagura();
+        pObj = new (pObj) cObjYagura;
         break;
     case ID_WEP_EGG:
-        pObj = new (pObj) cObjEgg();
+        pObj = new (pObj) cObjEgg;
         break;
     case ID_TROLLEY:
-        pObj = new (pObj) cObjTrolley();
+        pObj = new (pObj) cObjTrolley;
         break;
     case ID_BULL:
-        pObj = new (pObj) cObjBull();
+        pObj = new (pObj) cObjBull;
         break;
     case ID_PILLAR:
-        pObj = new (pObj) cObjPillar();
+        pObj = new (pObj) cObjPillar;
         break;
     default:
         if (id > 0x3F) {

@@ -54,7 +54,7 @@ void Wep06_init(cModel* m)
 // ObjInitFunc[0x31]: placement-constructs the class in the work cObjMgr::construct hands over.
 void ObjGovernment_init(cObj* obj)
 {
-    new (obj) cObjGovernment();
+    new (obj) cObjGovernment;
 }
 
 // cObjWep::init override (parent = the player): model 0x6 with idle 0x34 (type 1: model 0x7 with

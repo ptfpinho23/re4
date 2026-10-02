@@ -395,7 +395,7 @@ void cPlAda::moveCloth()
 // PlInitFunc: placement-constructs Ada in the player's cEm work (em.cpp cEmMgr::construct id 0).
 void Pl02Init(cEm* em)
 {
-    new (em) cPlAda();
+    new (em) cPlAda;
 }
 
 // REL entry: registers the player constructor.

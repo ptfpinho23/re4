@@ -53,7 +53,7 @@ void Wep33_init(cModel* m)
 // ObjInitFunc[0x2B]: placement-constructs the class in the work cObjMgr::construct hands over.
 void ObjShotgun_init(cObj* obj)
 {
-    new (obj) cObjShotgun();
+    new (obj) cObjShotgun;
 }
 
 // cObjWep::init override (parent = the player): model 0x5 / texture 0x6, atari bits 8/9 off,

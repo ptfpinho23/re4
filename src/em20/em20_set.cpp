@@ -42,7 +42,7 @@ extern "C" void _unresolved()
 // builds the enemy through Em10SetFunc).
 void Em20Init(cEm* em)
 {
-    new (em) cEm10();
+    new (em) cEm10;
 }
 
 // Em10SetFunc of this module: the island soldiers (class 2): model type pairs 14/18 (default), 15/19, 16/20, 17/21 and 22 (the island chainsaw carrier: cEm::flag bit28 set, voice 1). Fills the work's motion table mot[0..40] (body / head / hand

@@ -29,6 +29,9 @@ TASK* CTASK_MAIN = (TASK*) -1;
 TASK* pCTask = CTASK_MAIN;
 OSThread* pParentThread;
 static int iTask_exec_flg = 0;
+#ifdef RE4_PORT
+static volatile int isrParked;  // the background task waits in port_isr_checkpoint
+#endif
 
 void TaskKill(TASK* t);
 
@@ -170,6 +173,11 @@ void TaskSchedulerMain(TASK* pT)
         // A task whose function returns (a scenario task, whose thread then just ends) keeps
         // TASK_RUN: its thread is moribund by then.
         while (pT->Status == TASK_RUN && pT->Thread.state != OS_THREAD_STATE_MORIBUND) {
+            OSYieldThread();
+        }
+        // the retrace's suspension takes effect at the task's next checkpoint: wait for it, so
+        // the main thread never runs while the task is mid-step (they share the DVD buffers)
+        while ((pT->Status & TASK_SUSPEND) && !isrParked && pT->Thread.state == OS_THREAD_STATE_RUNNING) {
             OSYieldThread();
         }
         {
@@ -460,7 +468,12 @@ void iTaskSuspend()
 #endif
         if (t->Thread.state == 2) {
             t->Status |= TASK_SUSPEND;
+#ifndef RE4_PORT
             OSSuspendThread(&t->Thread);
+#else
+            // no kernel suspension: the task parks itself at its next checkpoint (a thread
+            // suspended inside a kernel wait would run on when the wait ends)
+#endif
         }
     }
 }
@@ -474,12 +487,14 @@ void iTaskSuspend()
 void port_isr_checkpoint(void)
 {
     TASK* t = &Task[TASK_ISR];
-    if (OSGetCurrentThread() != &t->Thread) {  // (pCTask is the task the main thread schedules)
+    if (OSGetCurrentThread() != &t->Thread || !(t->Status & TASK_SUSPEND)) {  // (pCTask is the task the main thread schedules)
         return;
     }
+    isrParked = 1;
     while ((t->Status & TASK_SUSPEND) && iTask_exec_flg == 1) {
         OSYieldThread();
     }
+    isrParked = 0;
 }
 #endif
 

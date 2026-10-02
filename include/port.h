@@ -90,6 +90,8 @@ class cSatFile;
 extern "C" cSatFile* port_fix_sat(cSatFile* f);  // a room collision (SAT) file
 extern "C" void port_fix_sat_native(cSatFile* f);  // a SAT built at run time: registered as already native
 extern "C" struct FlrAtHead* port_fix_flr(struct FlrAtHead* p);  // a room floor attribute (FSE) file
+extern "C" struct SstArea* port_fix_sst_area(struct SstArea* p);  // a room effect area list
+extern "C" void* port_fix_path(void* p);  // an effect path (path.h Path), byte-swapped once
 #endif
 #endif
 

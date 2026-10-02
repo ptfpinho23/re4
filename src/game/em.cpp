@@ -1,6 +1,9 @@
 // game/em.cpp: the character work base (cEm) and its manager (cEmMgr): construction of the
 // player / enemy / object classes by id, the per-frame emMove loop, the damage info (cDmgInfo).
 
+#ifdef RE4_PORT
+#include "port_psp.h"
+#endif
 #include "atari.h"
 #include "ctrl.h"
 #include "em.h"

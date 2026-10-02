@@ -114,12 +114,18 @@ foreach(mod IN LISTS RE4_MODULES)
         list(APPEND re4_mod_objects "${RE4_MODS_DIR}/${mod}.mod.o")  # the debug tool modules stay out
     endif()
 endforeach()
+set(re4_mod_link_inputs "")
+foreach(t IN LISTS re4_module_targets)
+    list(APPEND re4_mod_link_inputs "$<TARGET_OBJECTS:${t}>")
+endforeach()
+list(APPEND re4_mod_link_inputs "$<TARGET_OBJECTS:re4_game>" "$<TARGET_FILE:re4_port>")
 set(RE4_MODULES_GEN "${RE4_MODS_DIR}/port_modules_gen.cpp")
 add_custom_command(
     OUTPUT ${re4_mod_objects} "${RE4_MODULES_GEN}"
     COMMAND "${CMAKE_COMMAND}" -E env "PATH=$ENV{PSPDEV}/bin:$ENV{PATH}" "${Python3_EXECUTABLE}" "${RE4_ROOT}/tools/port/modlink.py"
             --build "${CMAKE_BINARY_DIR}" --out "${RE4_MODS_DIR}"
     DEPENDS ${re4_module_targets} re4_game re4_port "${RE4_ROOT}/tools/port/modlink.py"
+            ${re4_mod_link_inputs}  # the objects themselves: a target name alone only orders the step, it does not re-run it when they change
     COMMENT "Linking the REL modules")
 set_source_files_properties(${re4_mod_objects} PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
 
@@ -141,5 +147,5 @@ add_executable(re4 "${CMAKE_CURRENT_SOURCE_DIR}/app/psp_main.cpp" "${RE4_STUBS}"
 # User-mode PSP libraries only: the driver's own spec appends libc, libm, libstdc++, libpspsdk and
 # libpspuser after these. libpspkernel must not appear: its StdioForKernel / SysclibForKernel
 # import stubs would shadow libc's printf / strtol (unimplemented in user mode).
-target_link_libraries(re4 PRIVATE re4_flags re4_port pspgu pspge pspdisplay pspdebug pspctrl pspaudio)
+target_link_libraries(re4 PRIVATE re4_flags re4_port pspgu pspge pspdisplay pspdebug pspctrl pspaudio psppower)
 create_pbp_file(TARGET re4 TITLE "RE4 PSP port" MEMSIZE 1)

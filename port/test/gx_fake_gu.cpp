@@ -23,7 +23,11 @@ void pg_cull(int e, int cw) { printf("CULL %d %d\n", e, cw); }
 void pg_pixel_mask(unsigned int m) { printf("MASK %08x\n", m); }
 void pg_fog(int e, float n, float f, unsigned int c) { printf("FOG %d %g %g %06x\n", e, n, f, c); }
 void pg_texture_off(void) { lastTexSet = 0; }
+void pg_texture_forget(void) {}
 int pg_dump_pending(void) { return 0; }
+void pg_save_raw(const char*, const void*, unsigned int) {}
+void pg_draw_native(int, int, const void*, int, const PgNative*) {}  // (the host test keeps the CPU path: port_gx_native is 0 there)
+extern "C" { int port_overlay_on; }
 extern "C" void port_trace(const char* fmt, ...) { (void) fmt; }
 static const unsigned int* lastClut;
 static int lastClutEntries;
@@ -48,8 +52,8 @@ void pg_draw(int prim, int count, const PgVertex* v)
         // The record is what a sampler sees: indexed and 16-bit textures are expanded to 8888 here
         // (the GE replicates the high bits into the low ones, as the GameCube did).
         const unsigned char* p = (const unsigned char*) lastTexData;
-        if (lastTexPsm == PG_PSM_DXT1) {
-            int bytes = ((lastTexW + 3) / 4) * ((lastTexH + 3) / 4) * 8;
+        if (lastTexPsm == PG_PSM_DXT1 || lastTexPsm == PG_PSM_DXT3) {
+            int bytes = ((lastTexW + 3) / 4) * ((lastTexH + 3) / 4) * (lastTexPsm == PG_PSM_DXT3 ? 16 : 8);
             printf("TEX %d %d %d ", lastTexPsm, lastTexW, lastTexH);
             for (int i = 0; i < bytes; i++) printf("%02x", p[i]);
         } else {

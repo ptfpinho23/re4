@@ -291,7 +291,7 @@ extern "C" void _unresolved()
 // sets it up on the first move.
 void Em32Init(cEm* em)
 {
-    new (em) cEm32();
+    new (em) cEm32;
 }
 
 // Per-frame damage reaction, from move(). First the area damage (DmgMgr: the container falls /

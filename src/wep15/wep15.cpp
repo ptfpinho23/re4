@@ -51,7 +51,7 @@ void Wep15_init(cModel* m)
 // ObjInitFunc[0x2C]: placement-constructs the class in the work cObjMgr::construct hands over.
 void ObjMagnum_init(cObj* obj)
 {
-    new (obj) cObjMagnum();
+    new (obj) cObjMagnum;
 }
 
 // cObjWep::init override (parent = the player): model 0x6 / texture 0x5, atari bits 8/9 off,

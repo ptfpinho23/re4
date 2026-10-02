@@ -54,7 +54,7 @@ void Wep08_init(cModel* m)
 // ObjInitFunc[0x2F]: placement-constructs the class in the work cObjMgr::construct hands over.
 void ObjStriker_init(cObj* obj)
 {
-    new (obj) cObjStriker();
+    new (obj) cObjStriker;
 }
 
 // cObjWep::init override (parent = the player): model 0x5 / texture 0x6, atari bits 8/9 off,

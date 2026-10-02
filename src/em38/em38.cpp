@@ -112,7 +112,7 @@ extern "C" void _unresolved()
 // em38_R0_Init does the per-type setup on the first move.
 void Em38Init(cEm* em)
 {
-    new (em) cEm38();
+    new (em) cEm38;
 }
 
 // Per-frame damage reaction of every part, from move(). Consumes dmHit: applies em38SetDmVal

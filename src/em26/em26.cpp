@@ -59,7 +59,7 @@ extern "C" void _unresolved()
 // EmInitFunc of the module: constructs the cEm26 class in the manager's work.
 void Em26Init(cEm* em)
 {
-    new (em) cEm26();
+    new (em) cEm26;
 }
 
 // Per-frame damage check (cEm26::move): an explosion / fire volume kills the cow at once (flag bit5,

@@ -45,7 +45,7 @@ void partsSet(cObjMine* obj);
 // ObjInitFunc[0x36]: placement-constructs the class in the work cObjMgr::construct hands over.
 void ObjMine_init(cObj* obj)
 {
-    new (obj) cObjMine();
+    new (obj) cObjMine;
 }
 
 // cObjWep::init override (Wep14_init, parent = the player): weapon list id 0x36, model 0x8 /

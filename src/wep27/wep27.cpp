@@ -260,7 +260,7 @@ void cObjMachinegun::setMotion(cPlayer* pl)
 // ObjInitFunc[0x2D]: placement-constructs the class in the work cObjMgr::construct hands over.
 void ObjKlauMGun_init(cObj* obj)
 {
-    new (obj) cObjMachinegun();
+    new (obj) cObjMachinegun;
 }
 
 // REL entry: registers the weapon init / move routines and the object constructor slot.

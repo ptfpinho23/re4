@@ -2,6 +2,9 @@
 // hands it) until the player comes near, takes off, circles at flyHeight above the player, turns,
 // lands again on the corpse and pecks at it; a hit knocks it out of the air (Dm_Air) or kills it.
 
+#ifdef RE4_PORT
+#include "port_psp.h"
+#endif
 #include "atari.h"
 #include "light.h"
 #include "dmg.h"
@@ -64,7 +67,7 @@ extern "C" void _unresolved()
 // EmInitFunc of the module: constructs the cEm23 class in the manager's work.
 void Em23Init(cEm* em)
 {
-    new (em) cEm23();
+    new (em) cEm23;
 }
 
 // Per-frame damage check (cEm23::move): an explosion / fire volume kills the crow (flag bit2, Dm_Air);

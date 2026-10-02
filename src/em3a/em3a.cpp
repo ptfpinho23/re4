@@ -151,7 +151,7 @@ void cEm3a::setNoSuspend(int on)
 // EmInitFunc: placement-constructs the helicopter in the cEm work.
 void Em3aInit(cEm* em)
 {
-    new (em) cEm3a();
+    new (em) cEm3a;
 }
 
 // Damage of the frame (cEm::dmHit): type 2 while hidden dies at once from anything but a distant
