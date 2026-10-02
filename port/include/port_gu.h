@@ -119,9 +119,11 @@ struct PgNative {
     PgNativeLight light[8];   // (four reach the GE)
     unsigned int ambient;   // the global ambient colour (its alpha times the ambient material's is the vertex alpha)
     int colorMaterial;      // which materials are the vertex colour: 1 ambient, 2 diffuse
-    unsigned int material;  // the material colour where it is not the vertex colour
+    unsigned int emissive;  // added as it is (lights the GE has no slot for)
+    unsigned int matAmbient, matDiffuse;  // the material colours where they are not the vertex colour (matAmbient with the
+                            // alpha: without a vertex colour it is the whole colour of an unlit draw)
 };
-void pg_draw_native(int prim, int count, const void* verts, int bytes, const PgNative* n);
+void pg_draw_native(int prim, int count, const void* verts, int bytes, const PgNative* n);  // bytes: of vertices to write back from the cache (0: done)
 void* pg_get_memory(int bytes);
 void pg_overlay_begin(void);  // targets the frame now on screen
 void pg_debug_print(int col, int row, unsigned int color, const char* text);

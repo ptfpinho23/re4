@@ -229,7 +229,6 @@ static TexCacheEntry texCache[TEXCACHE_MAX];
 static u32 texUseClock;
 static u32 texCacheBytes;      // converted bytes held; the PSP's heap is small, so the cache keeps a budget
 extern "C" { unsigned int port_gx_stat_conversions, port_gx_stat_copies, port_gx_stat_dropped; }  // dropped: bad-vertex draws
-extern "C" { unsigned int port_gx_stat_offscreen, port_gx_stat_onscreen; }
 extern "C" { unsigned int port_gx_us_xform, port_gx_us_state, port_gx_us_gather, port_gx_us_native, port_gx_stat_native_draws, port_gx_stat_cpu_draws; }
 extern "C" {
 // The native path (drawNative): vertices of disc display lists handed to the GE in the model's
@@ -242,6 +241,7 @@ volatile int port_gx_native = 0;
 #endif
 unsigned int port_gx_stat_native, port_gx_stat_cpu;  // vertices per stats period by path
 unsigned int port_gx_stat_why[8];                    // vertices kept on the CPU path, by reason
+unsigned int port_gx_stat_flat;                      // draws / segments where a light of some strength was turned into ambient (the GE has four)
 }
 static u32 lightGen;                       // bumped when a light / channel set-up changes
 static f32 boundSu = 1.0f, boundSv = 1.0f; // the bound texture's padding scale (applyDrawState)
@@ -1155,231 +1155,243 @@ static inline const u8* attrPtr(const u8* sp, u8 mode, const u8* base, u32 strid
 }
 static inline u32 attrStreamSize(u8 mode, u32 direct) { return mode == 1 ? direct : mode == 2 ? 1 : mode == 3 ? 2 : 0; }
 
-// Draws `count` vertices of a disc display list through the GE's own transform: the attributes
-// are gathered (de-indexed, byte-swapped) into a GE vertex in the model's space, the model matrix
-// is the game's current position matrix (with the fixed-point scale of 16-bit positions folded
-// in), the lights are the GE's and the texture coordinates go through the GE's scale or texture
-// matrix. Returns the stream position after the vertices, or NULL when the draw needs something
-// the GE cannot do the game's way (the CPU path then takes it): per-vertex matrix indices,
-// generated texture coordinates from positions / normals, more than four lights, spot angle
-// attenuation, an ambient colour from the vertices.
-static const u8* drawNative(Parser* s, int prim, int vf, u32 count)
+// The native path: vertices of disc display lists go to the GE in the model's space. The
+// attributes are gathered (de-indexed, byte-swapped) into a GE vertex, the model matrix is the
+// game's current position matrix (with the fixed-point scale of 8 / 16-bit positions folded in),
+// the lights are the GE's and the texture coordinates go through the GE's scale or texture
+// matrix. What the GE cannot do the game's way stays on the CPU path: per-vertex matrix indices,
+// texture coordinates generated from positions / normals, more than four lights that matter,
+// spot curves other than GX_SP_COS.
+struct NativeFmt {
+    u8 posMode, nrmMode, clrMode, texMode;
+    u8 posType, nrmType, clrType, texType;
+    u8 lit, hasTex, texMatrix, colorOut;              // colorOut: the GE vertex carries a colour (else the draw has one colour: the material's)
+    int ch, si;
+    u32 posOff, nrmOff, clrOff, texOff, streamBytes;  // in the stream
+    u32 clrOut, nrmOut, posOut, stride, vtype;        // in the GE vertex
+    u32 baseColor, vmask;                             // a vertex's colour: (its own & vmask) | baseColor
+    f32 ku, posQ;
+    u8 posFrac;
+    const u8 *posBase, *nrmBase, *clrBase, *texBase;
+    u32 posStride, nrmStride, clrStride, texStride;
+};
+struct NativeLights {
+    f32 ambientExtra[3];  // lights left out of the GE's four
+    u32 lightSel;         // which of the game's lights reach the GE
+};
+struct LightBounds { f32 lo[3], hi[3]; };  // the draw's extent in the model's space: where the lights' strength is taken
+
+// The vertex format part: 0, or the reason (port_gx_stat_why index + 1) the GE cannot take it.
+static int nativeFormat(int vf, NativeFmt* F)
 {
     const Vat* f = &vat[vf];
-#define WHY(n) do { port_gx_stat_why[n] += count; return NULL; } while (0)
-    if (prim != 0 && prim != 2 && prim != 3 && prim != 4) WHY(0);  // quads, triangles, strips, fans
-    if (vcd[A_PNMTX]) WHY(1);
-    for (int k = 0; k < 8; k++) if (vcd[A_TEXMTX0 + k]) WHY(1);
+    if (vcd[A_PNMTX]) return 2;
+    for (int k = 0; k < 8; k++) if (vcd[A_TEXMTX0 + k]) return 2;
     const u8 posMode = vcd[A_POS], nrmMode = vcd[A_NRM], clrMode = vcd[A_CLR0], texMode = vcd[A_TEX0];
-    if (!posMode || f->pos.cnt != 1 || (f->pos.type != 1 && f->pos.type != 3 && f->pos.type != 4)) {
-        static u32 nTr;
-        if (++nTr <= 6) port_trace("[gx] native: position mode %d type %d cnt %d frac %d (colour mode %d type %d)\n", posMode, f->pos.type, f->pos.cnt, f->pos.frac, vcd[A_CLR0], f->clr[0].type);
-        WHY(2);
-    }
-    if (posMode != 1 && !arrayBase[A_POS]) WHY(2);
+    if (!posMode || f->pos.cnt != 1 || (f->pos.type != 1 && f->pos.type != 3 && f->pos.type != 4)) return 3;
+    if (posMode != 1 && !arrayBase[A_POS]) return 3;
     const int ch = rasChannel();
     const Chan* c = ch >= 0 ? &chan[ch] : NULL;
-    const Chan* ca = ch >= 0 ? &chan[ch + 2] : NULL;
     const int lit = c && c->enable;
-    if (lit && !nrmMode) WHY(3);
+    if (lit && !nrmMode) return 4;
     const u8 nrmType = f->nrm.type;
     if (nrmMode) {
-        if (f->nrm.cnt != 0 || (nrmType != 1 && nrmType != 3 && nrmType != 4)) WHY(3);
-        if (nrmMode != 1 && !arrayBase[A_NRM]) WHY(3);
+        if (f->nrm.cnt != 0 || (nrmType != 1 && nrmType != 3 && nrmType != 4)) return 4;
+        if (nrmMode != 1 && !arrayBase[A_NRM]) return 4;
     }
     const u8 clrType = f->clr[0].type;
-    if (clrMode && (clrType > 5 || (clrMode != 1 && !arrayBase[A_CLR0]))) {
-        static u32 nTr;
-        if (++nTr <= 6) port_trace("[gx] native: colour mode %d type %d base %p\n", clrMode, clrType, arrayBase[A_CLR0]);
-        WHY(2);
-    }
+    if (clrMode && (clrType > 5 || (clrMode != 1 && !arrayBase[A_CLR0]))) return 3;
     const u8 texType = f->tex[0].type;
-    if (texMode && (f->tex[0].cnt != 1 || texType > 4 || (texMode != 1 && !arrayBase[A_TEX0]))) WHY(4);
+    if (texMode && (f->tex[0].cnt != 1 || texType > 4 || (texMode != 1 && !arrayBase[A_TEX0]))) return 5;
     const int si = textureStage();
-    const int hasTex = texMode != 0 && si >= 0;
-    const TexGen* g = &texGen[0];
-    int texMatrix = 0;
+    F->texMatrix = 0;
     if (si >= 0) {
-        if (!texMode || g->src != 4 || g->normalize || g->postMtx != 125) WHY(4);  // generated / post-transformed coordinates
+        const TexGen* g = &texGen[0];
+        if (!texMode || g->src != 4 || g->normalize || g->postMtx != 125) return 5;  // generated / post-transformed coordinates
         if (g->mtx != 60 && g->mtx < 64) {
-            if (g->func == 0) WHY(4);                                                // a 3x4 matrix with the q divide
-            texMatrix = 1;
+            if (g->func == 0) return 5;                                             // a 3x4 matrix with the q divide
+            F->texMatrix = 1;
         }
     }
+    F->posMode = posMode; F->nrmMode = nrmMode; F->clrMode = clrMode; F->texMode = texMode;
+    F->posType = f->pos.type; F->nrmType = nrmType; F->clrType = clrType; F->texType = texType;
+    F->lit = (u8) lit; F->hasTex = texMode != 0 && si >= 0;
+    F->ch = ch; F->si = si;
     // the stream: POS, NRM, CLR0, CLR1, TEX0..7, each direct or an 8 / 16-bit index
     static const u8 clrSize[6] = {2, 3, 4, 2, 3, 4};
     u32 off = 0;
-    const u32 posOff = off; off += attrStreamSize(posMode, compSize(f->pos.type) * 3);
-    const u32 nrmOff = off; off += attrStreamSize(nrmMode, compSize(nrmType) * 3);
-    const u32 clrOff = off; off += attrStreamSize(clrMode, clrSize[clrType % 6]);
+    F->posOff = off; off += attrStreamSize(posMode, compSize(f->pos.type) * 3);
+    F->nrmOff = off; off += attrStreamSize(nrmMode, compSize(nrmType) * 3);
+    F->clrOff = off; off += attrStreamSize(clrMode, clrSize[clrType % 6]);
     off += attrStreamSize(vcd[A_CLR1], clrSize[f->clr[1].type % 6]);
-    const u32 texOff = off; off += attrStreamSize(texMode, compSize(texType) * 2);
+    F->texOff = off; off += attrStreamSize(texMode, compSize(texType) * 2);
     for (int k = 1; k < 8; k++) off += attrStreamSize(vcd[A_TEX0 + k], compSize(f->tex[k].type) * (f->tex[k].cnt ? 2 : 1));
-    const u32 streamBytes = off;
-    PgNative nat;
-    nat.nLights = 0;
-    f32 ambientExtra[3] = {0.0f, 0.0f, 0.0f};  // lights left out of the GE's four
+    F->streamBytes = off;
+    F->ku = texType == 4 ? 1.0f : 1.0f / (f32) (1u << (f->tex[0].frac & 31));
+    F->posFrac = f->pos.frac & 31;
+    F->posQ = 1.0f / (f32) (1u << F->posFrac);
+    F->posBase = arrayBase[A_POS]; F->posStride = arrayStride[A_POS];
+    F->nrmBase = arrayBase[A_NRM]; F->nrmStride = arrayStride[A_NRM];
+    F->clrBase = arrayBase[A_CLR0]; F->clrStride = arrayStride[A_CLR0];
+    F->texBase = arrayBase[A_TEX0]; F->texStride = arrayStride[A_TEX0];
+    return 0;
+}
+
+// A stream vertex's position, in the model's space.
+static void decodePos(const NativeFmt* F, const u8* sp, f32* o)
+{
+    const u8* p = attrPtr(sp + F->posOff, F->posMode, F->posBase, F->posStride);
+    if (F->posType == 4) { o[0] = bef32(p); o[1] = bef32(p + 4); o[2] = bef32(p + 8); }
+    else if (F->posType == 3) { o[0] = (f32) (s16) be16(p) * F->posQ; o[1] = (f32) (s16) be16(p + 2) * F->posQ; o[2] = (f32) (s16) be16(p + 4) * F->posQ; }
+    else { o[0] = (f32) (s8) p[0] * F->posQ; o[1] = (f32) (s8) p[1] * F->posQ; o[2] = (f32) (s8) p[2] * F->posQ; }
+}
+
+// The lights of a lit draw, as the GE's: 0, or the reason they cannot be.
+static int nativeLights(const NativeFmt* F, PgNative* nat, const LightBounds* bb, NativeLights* L)
+{
+    nat->nLights = 0;
+    L->ambientExtra[0] = L->ambientExtra[1] = L->ambientExtra[2] = 0.0f;
+    L->lightSel = 0;
+    if (!F->lit) return 0;
+    const Chan* c = &chan[F->ch];
+    const Chan* ca = &chan[F->ch + 2];
     u8 lightIdx[8];
-    if (lit) {
-        if ((c->ambSrc != 0 && c->matSrc != 0) || c->attnFn == 0 || ca->enable) {
-            static u32 nTr;
-            if (++nTr <= 6) port_trace("[gx] native: lighting model ambSrc %d matSrc %d attnFn %d diffFn %d alpha enable %d mask %x\n", c->ambSrc, c->matSrc, c->attnFn, c->diffFn, ca->enable, (unsigned) c->lightMask);
-            WHY(5);
-        }
-        for (int i = 0; i < 8; i++) {
-            if (!(c->lightMask & (1u << i))) continue;
-            const LightPort* l = &lights[i];
-            f32 a0 = 1.0f, a1 = 0.0f, a2 = 0.0f;
-            u32 lcol = l->color;
-            f32 peak = 1.0f, cutoff = 0.0f, exponent = 0.0f;
-            int spot = 0;
-            if (c->attnFn == 1) {  // GX_AF_SPOT: angle attenuation over distance attenuation
-                if (l->k0 == 0.0f && l->k1 == 0.0f && l->k2 == 0.0f) continue;   // (no light at any distance)
-                peak = l->a0;
-                if (l->a1 != 0.0f || l->a2 != 0.0f) {
-                    // a0 + a1 cos: zero at the cutoff cosine -a0 / a1, rising to a0 + a1 on the axis
-                    // (GXInitLightSpot's GX_SP_COS family). The GE's spot is cos^exponent inside
-                    // the cutoff: exact for a 90 degree cone, matched at the cone's middle otherwise.
-                    const f32 len2 = l->dx * l->dx + l->dy * l->dy + l->dz * l->dz;
-                    cutoff = l->a1 > 0.0f ? -l->a0 / l->a1 : 2.0f;
-                    peak = l->a0 + l->a1;
-                    if (l->a2 != 0.0f || cutoff <= -0.99f || cutoff >= 0.99f || peak <= 0.0f || len2 < 0.98f || len2 > 1.02f) {
-                        static u32 nTr;
-                        if (++nTr <= 10) port_trace("[gx] native: light %d angle %g %g %g dist %g %g %g pos %g %g %g dir %g %g %g diffFn %d\n", i, l->a0, l->a1, l->a2, l->k0, l->k1, l->k2, l->px, l->py, l->pz, l->dx, l->dy, l->dz, c->diffFn);
-                        WHY(6);
-                    }
-                    spot = 1;
-                    const f32 mid = (1.0f + cutoff) * 0.5f;
-                    exponent = cutoff == 0.0f ? 1.0f : logf(0.5f) / logf(mid);
+    if ((c->ambSrc != 0 && c->matSrc != 0) || c->attnFn == 0 || ca->enable) {
+        static u32 nTr;
+        if (++nTr <= 6) port_trace("[gx] native: lighting model ambSrc %d matSrc %d attnFn %d diffFn %d alpha enable %d mask %x\n", c->ambSrc, c->matSrc, c->attnFn, c->diffFn, ca->enable, (unsigned) c->lightMask);
+        return 6;
+    }
+    for (int i = 0; i < 8; i++) {
+        if (!(c->lightMask & (1u << i))) continue;
+        const LightPort* l = &lights[i];
+        f32 a0 = 1.0f, a1 = 0.0f, a2 = 0.0f;
+        u32 lcol = l->color;
+        f32 peak = 1.0f, cutoff = 0.0f, exponent = 0.0f;
+        int spot = 0;
+        if (c->attnFn == 1) {  // GX_AF_SPOT: angle attenuation over distance attenuation
+            if (l->k0 == 0.0f && l->k1 == 0.0f && l->k2 == 0.0f) continue;   // (no light at any distance)
+            peak = l->a0;
+            if (l->a1 != 0.0f || l->a2 != 0.0f) {
+                // a0 + a1 cos: zero at the cutoff cosine -a0 / a1, rising to a0 + a1 on the axis
+                // (GXInitLightSpot's GX_SP_COS family). The GE's spot is cos^exponent inside
+                // the cutoff: exact for a 90 degree cone, matched at the cone's middle otherwise.
+                const f32 len2 = l->dx * l->dx + l->dy * l->dy + l->dz * l->dz;
+                cutoff = l->a1 > 0.0f ? -l->a0 / l->a1 : 2.0f;
+                peak = l->a0 + l->a1;
+                if (l->a2 != 0.0f || cutoff <= -0.99f || cutoff >= 0.99f || peak <= 0.0f || len2 < 0.98f || len2 > 1.02f) {
+                    static u32 nTr;
+                    if (++nTr <= 10) port_trace("[gx] native: light %d angle %g %g %g dist %g %g %g pos %g %g %g dir %g %g %g diffFn %d\n", i, l->a0, l->a1, l->a2, l->k0, l->k1, l->k2, l->px, l->py, l->pz, l->dx, l->dy, l->dz, c->diffFn);
+                    return 7;
                 }
-                if (peak <= 0.0f) continue;
-                // the constant factor is a brightness: into the colour when it brightens (the GE
-                // clamps the attenuation at 1), into the distance terms when it dims
-                a0 = l->k0; a1 = l->k1; a2 = l->k2;
-                if (peak > 1.0f) {
-                    u32 r = (u32) ((f32) (lcol & 0xFF) * peak), gg = (u32) ((f32) ((lcol >> 8) & 0xFF) * peak), b = (u32) ((f32) ((lcol >> 16) & 0xFF) * peak);
-                    lcol = (lcol & 0xFF000000u) | ((b > 255 ? 255 : b) << 16) | ((gg > 255 ? 255 : gg) << 8) | (r > 255 ? 255 : r);
-                } else if (peak < 1.0f) {
-                    a0 /= peak; a1 /= peak; a2 /= peak;
-                }
+                spot = 1;
+                const f32 mid = (1.0f + cutoff) * 0.5f;
+                exponent = cutoff == 0.0f ? 1.0f : logf(0.5f) / logf(mid);
             }
-            if (nat.nLights == 8) WHY(7);
-            lightIdx[nat.nLights] = (u8) i;
-            PgNativeLight* o = &nat.light[nat.nLights++];
-            o->ambientOnly = c->diffFn == 0;
-            o->pos[0] = l->px; o->pos[1] = l->py; o->pos[2] = l->pz;
-            o->color = lcol;
-            o->att[0] = a0; o->att[1] = a1; o->att[2] = a2;
-            o->spot = spot;
-            o->dir[0] = l->dx; o->dir[1] = l->dy; o->dir[2] = l->dz;
-            o->exponent = exponent; o->cutoff = cutoff;
-        }
-        if (nat.nLights > 4) {
-            // the GE has four lights: the ones that add nothing visible to this draw are left out
-            // (a room's lamps reach a few metres; a model far from them still lists them). Their
-            // strength is taken at the draw's first, middle and last vertex.
-            f32 sample[3][3];
-            for (int k = 0; k < 3; k++) {
-                const u32 n = k == 0 ? 0 : k == 1 ? count / 2 : count - 1;
-                const u8* p = attrPtr(s->p + n * streamBytes + posOff, posMode, arrayBase[A_POS], arrayStride[A_POS]);
-                f32 x, y, z;
-                if (f->pos.type == 4) { x = bef32(p); y = bef32(p + 4); z = bef32(p + 8); }
-                else {
-                    const f32 q = 1.0f / (f32) (1u << (f->pos.frac & 31));
-                    if (f->pos.type == 3) { x = (f32) (s16) be16(p) * q; y = (f32) (s16) be16(p + 2) * q; z = (f32) (s16) be16(p + 4) * q; }
-                    else { x = (f32) (s8) p[0] * q; y = (f32) (s8) p[1] * q; z = (f32) (s8) p[2] * q; }
-                }
-                const f32* m = &mtxMem[currentMtx][0];
-                sample[k][0] = m[0] * x + m[1] * y + m[2] * z + m[3];
-                sample[k][1] = m[4] * x + m[5] * y + m[6] * z + m[7];
-                sample[k][2] = m[8] * x + m[9] * y + m[10] * z + m[11];
+            if (peak <= 0.0f) continue;
+            // the constant factor is a brightness: into the colour when it brightens (the GE
+            // clamps the attenuation at 1), into the distance terms when it dims
+            a0 = l->k0; a1 = l->k1; a2 = l->k2;
+            if (peak > 1.0f) {
+                u32 r = (u32) ((f32) (lcol & 0xFF) * peak), gg = (u32) ((f32) ((lcol >> 8) & 0xFF) * peak), b = (u32) ((f32) ((lcol >> 16) & 0xFF) * peak);
+                lcol = (lcol & 0xFF000000u) | ((b > 255 ? 255 : b) << 16) | ((gg > 255 ? 255 : gg) << 8) | (r > 255 ? 255 : r);
+            } else if (peak < 1.0f) {
+                a0 /= peak; a1 /= peak; a2 /= peak;
             }
-            f32 strength[8];
-            for (int i = 0; i < nat.nLights; i++) {
-                const PgNativeLight* o = &nat.light[i];
+        }
+        if (nat->nLights == 8) return 8;
+        lightIdx[nat->nLights] = (u8) i;
+        PgNativeLight* o = &nat->light[nat->nLights++];
+        o->ambientOnly = c->diffFn == 0;
+        o->pos[0] = l->px; o->pos[1] = l->py; o->pos[2] = l->pz;
+        o->color = lcol;
+        o->att[0] = a0; o->att[1] = a1; o->att[2] = a2;
+        o->spot = spot;
+        o->dir[0] = l->dx; o->dir[1] = l->dy; o->dir[2] = l->dz;
+        o->exponent = exponent; o->cutoff = cutoff;
+    }
+    if (nat->nLights > 4) {
+        // the GE has four lights: the ones that add nothing visible to this draw are left out
+        // (a room's lamps reach a few metres; a model far from them still lists them). Their
+        // strength is the most they can have over the draw's extent: at the point of its box
+        // (in the lights' space) nearest the light.
+        f32 vlo[3], vhi[3];
+        const f32* m = &mtxMem[currentMtx][0];
+        for (int k = 0; k < 8; k++) {
+            const f32 x = (k & 1) ? bb->hi[0] : bb->lo[0], y = (k & 2) ? bb->hi[1] : bb->lo[1], z = (k & 4) ? bb->hi[2] : bb->lo[2];
+            const f32 v[3] = {m[0] * x + m[1] * y + m[2] * z + m[3], m[4] * x + m[5] * y + m[6] * z + m[7], m[8] * x + m[9] * y + m[10] * z + m[11]};
+            for (int a = 0; a < 3; a++) {
+                if (k == 0 || v[a] < vlo[a]) vlo[a] = v[a];
+                if (k == 0 || v[a] > vhi[a]) vhi[a] = v[a];
+            }
+        }
+        f32 strength[8];
+        for (int i = 0; i < nat->nLights; i++) {
+            const PgNativeLight* o = &nat->light[i];
+            const u32 col = o->color;
+            u32 top = col & 0xFF;
+            if (((col >> 8) & 0xFF) > top) top = (col >> 8) & 0xFF;
+            if (((col >> 16) & 0xFF) > top) top = (col >> 16) & 0xFF;
+            f32 d2 = 0.0f;
+            for (int a = 0; a < 3; a++) {
+                const f32 c = o->pos[a] < vlo[a] ? vlo[a] : o->pos[a] > vhi[a] ? vhi[a] : o->pos[a];
+                d2 += (o->pos[a] - c) * (o->pos[a] - c);
+            }
+            const f32 den = o->att[0] + o->att[1] * sqrtf(d2) + o->att[2] * d2;
+            strength[i] = den > 1.0f ? (f32) top / den : (f32) top;
+        }
+        while (nat->nLights > 4) {
+            int weakest = 0;
+            for (int i = 1; i < nat->nLights; i++) if (strength[i] < strength[weakest]) weakest = i;
+            if (strength[weakest] >= 1.5f) {  // (of 255)
+                // the light becomes ambient: a quarter of it, the mean of its diffuse term over
+                // all the directions a surface can face. The village lights its rooms with
+                // three sun-like lights and a lamp or two: near a lamp, the faintest of the
+                // suns goes flat.
+                if (strength[weakest] >= 12.0f) port_gx_stat_flat++;
+                const PgNativeLight* o = &nat->light[weakest];
                 const u32 col = o->color;
                 u32 top = col & 0xFF;
                 if (((col >> 8) & 0xFF) > top) top = (col >> 8) & 0xFF;
                 if (((col >> 16) & 0xFF) > top) top = (col >> 16) & 0xFF;
-                f32 best = 0.0f;
-                for (int k = 0; k < 3; k++) {
-                    const f32 dx = o->pos[0] - sample[k][0], dy = o->pos[1] - sample[k][1], dz = o->pos[2] - sample[k][2];
-                    const f32 d2 = dx * dx + dy * dy + dz * dz;
-                    const f32 den = o->att[0] + o->att[1] * sqrtf(d2) + o->att[2] * d2;
-                    const f32 v = den > 1.0f ? (f32) top / den : (f32) top;
-                    if (v > best) best = v;
-                }
-                strength[i] = best;
+                const f32 k = (o->ambientOnly ? 1.0f : 0.25f) * strength[weakest] / (f32) (top ? top : 1);
+                L->ambientExtra[0] += (f32) (col & 0xFF) * k;
+                L->ambientExtra[1] += (f32) ((col >> 8) & 0xFF) * k;
+                L->ambientExtra[2] += (f32) ((col >> 16) & 0xFF) * k;
             }
-            while (nat.nLights > 4) {
-                int weakest = 0;
-                for (int i = 1; i < nat.nLights; i++) if (strength[i] < strength[weakest]) weakest = i;
-                if (strength[weakest] >= 1.5f) {  // (of 255)
-                    // a faint light becomes ambient: a quarter of it, the mean of its diffuse term
-                    // over all the directions a surface can face
-                    if (strength[weakest] >= 12.0f || c->ambSrc != 0) {
-                        static u32 nTr;
-                        if (++nTr <= 6) port_trace("[gx] native: %d lights, the weakest adds %g\n", nat.nLights, strength[weakest]);
-                        WHY(7);
-                    }
-                    const PgNativeLight* o = &nat.light[weakest];
-                    const u32 col = o->color;
-                    u32 top = col & 0xFF;
-                    if (((col >> 8) & 0xFF) > top) top = (col >> 8) & 0xFF;
-                    if (((col >> 16) & 0xFF) > top) top = (col >> 16) & 0xFF;
-                    const f32 k = (o->ambientOnly ? 1.0f : 0.25f) * strength[weakest] / (f32) (top ? top : 1);
-                    ambientExtra[0] += (f32) (col & 0xFF) * k;
-                    ambientExtra[1] += (f32) ((col >> 8) & 0xFF) * k;
-                    ambientExtra[2] += (f32) ((col >> 16) & 0xFF) * k;
-                }
-                for (int i = weakest; i + 1 < nat.nLights; i++) { nat.light[i] = nat.light[i + 1]; strength[i] = strength[i + 1]; lightIdx[i] = lightIdx[i + 1]; }
-                nat.nLights--;
-            }
+            for (int i = weakest; i + 1 < nat->nLights; i++) { nat->light[i] = nat->light[i + 1]; strength[i] = strength[i + 1]; lightIdx[i] = lightIdx[i + 1]; }
+            nat->nLights--;
         }
     }
-#undef WHY
-    const u8* sp = s->p;
-    const u8* end = sp + count * streamBytes;
-    if (cullMode == 3) return end;  // GX_CULL_ALL
-    const f32* m = &mtxMem[currentMtx][0];
-    for (int i = 0; i < 12; i++) {
-        if (!(m[i] == m[i])) { port_gx_stat_dropped++; return end; }
-    }
-    const int hasColor = clrMode != 0;
-    applyDrawState(hasColor);
-    if (drawConstColorOn && lit) { port_gx_stat_why[5] += count; return NULL; }
-    // the GE vertex: texture f32 x 2, colour, normal (when lit), position
-    u32 o = 0, vtype = PG_VT_COLOR_8888;
-    if (hasTex) { vtype |= PG_VT_TEX_F32; o = 8; }
-    const u32 clrOut = o; o += 4;
-    const u32 nrmOut = o;
-    if (lit) {
-        if (nrmType == 1) { o += 3; vtype |= PG_VT_NRM_S8; }
-        else if (nrmType == 3) { o += 6; vtype |= PG_VT_NRM_S16; }
-        else { o += 12; vtype |= PG_VT_NRM_F32; }
-    }
-    const int pos16 = f->pos.type == 3, pos8 = f->pos.type == 1;
-    u32 posOut;
-    if (pos8) { posOut = o; o += 3; vtype |= PG_VT_POS_S8; }
-    else if (pos16) { o = (o + 1) & ~1u; posOut = o; o += 6; vtype |= PG_VT_POS_S16; }
-    else { o = (o + 3) & ~3u; posOut = o; o += 12; vtype |= PG_VT_POS_F32; }
-    const u32 stride = (o + 3) & ~3u;
-    const int quads = prim == 0;
-    const u32 outCount = quads ? count / 4 * 6 : count;
-    u8* out = (u8*) pg_get_memory((int) (outCount * stride));
-    if (!out) return end;
+    for (int i = 0; i < nat->nLights; i++) L->lightSel |= 1u << lightIdx[i];
+    return 0;
+}
+
+// The colours (after applyDrawState: the texture stage may put a register in the vertex colour's
+// place) and, with them, the GE vertex's layout: 0, or the reason.
+static int nativeColors(NativeFmt* F, PgNative* nat, const NativeLights* L)
+{
+    const int lit = F->lit, hasColor = F->clrMode != 0, ch = F->ch;
+    if (drawConstColorOn && lit) return 6;
+    const Chan* c = ch >= 0 ? &chan[ch] : NULL;
+    const Chan* ca = ch >= 0 ? &chan[ch + 2] : NULL;
     // the colour a vertex carries: the material of a lit draw (the GE multiplies the light sum by
     // it and takes its alpha), the rasterised colour of an unlit one
     u32 baseColor, vmask;
+    nat->ambient = 0xFFFFFFFFu; nat->colorMaterial = 0; nat->matDiffuse = 0xFFFFFFFFu; nat->emissive = 0;
     if (lit && c->ambSrc != 0) {
         // (vertex colour + lights) x register material: the vertex colour is the GE's ambient
-        // material, the register the global ambient and the diffuse material
+        // material, the register the global ambient and the diffuse material; what the left-out
+        // lights add, times the material, is the emissive colour
         const u32 reg = chanMatColor[ch];
         baseColor = 0xFFFFFFFFu;
         vmask = hasColor ? (0x00FFFFFFu | (ca->matSrc != 0 ? 0xFF000000u : 0)) : 0;
-        nat.ambient = (reg & 0x00FFFFFFu) | (ca->matSrc == 0 ? (reg & 0xFF000000u) : 0xFF000000u);
-        nat.colorMaterial = 1;
-        nat.material = reg | 0xFF000000u;
+        nat->ambient = (reg & 0x00FFFFFFu) | (ca->matSrc == 0 ? (reg & 0xFF000000u) : 0xFF000000u);
+        nat->colorMaterial = 1;
+        nat->matDiffuse = reg | 0xFF000000u;
+        if (L->ambientExtra[0] + L->ambientExtra[1] + L->ambientExtra[2] > 0.0f) {
+            u32 r = (u32) (L->ambientExtra[0] * (f32) (reg & 0xFF) / 255.0f + 0.5f), g2 = (u32) (L->ambientExtra[1] * (f32) ((reg >> 8) & 0xFF) / 255.0f + 0.5f), b = (u32) (L->ambientExtra[2] * (f32) ((reg >> 16) & 0xFF) / 255.0f + 0.5f);
+            nat->emissive = (r > 255 ? 255 : r) | ((g2 > 255 ? 255 : g2) << 8) | ((b > 255 ? 255 : b) << 16);
+        }
     } else if (lit) {
         // (register ambient + lights) x material: the material (vertex or register colour, with the
         // alpha channel's own source) is composed into the vertex colour
@@ -1387,77 +1399,174 @@ static const u8* drawNative(Parser* s, int prim, int vf, u32 count)
         baseColor = (c->matSrc == 0 ? (reg & 0x00FFFFFFu) : 0x00FFFFFFu) | (ca->matSrc == 0 ? (reg & 0xFF000000u) : 0xFF000000u);
         vmask = hasColor ? ((c->matSrc != 0 ? 0x00FFFFFFu : 0) | (ca->matSrc != 0 ? 0xFF000000u : 0)) : 0;
         u32 amb = chanAmbColor[ch];
-        if (ambientExtra[0] + ambientExtra[1] + ambientExtra[2] > 0.0f) {
-            u32 r = (amb & 0xFF) + (u32) (ambientExtra[0] + 0.5f), g2 = ((amb >> 8) & 0xFF) + (u32) (ambientExtra[1] + 0.5f), b = ((amb >> 16) & 0xFF) + (u32) (ambientExtra[2] + 0.5f);
+        if (L->ambientExtra[0] + L->ambientExtra[1] + L->ambientExtra[2] > 0.0f) {
+            u32 r = (amb & 0xFF) + (u32) (L->ambientExtra[0] + 0.5f), g2 = ((amb >> 8) & 0xFF) + (u32) (L->ambientExtra[1] + 0.5f), b = ((amb >> 16) & 0xFF) + (u32) (L->ambientExtra[2] + 0.5f);
             amb = (r > 255 ? 255 : r) | ((g2 > 255 ? 255 : g2) << 8) | ((b > 255 ? 255 : b) << 16);
         }
-        nat.ambient = amb | 0xFF000000u;
-        nat.colorMaterial = 3;
-        nat.material = 0xFFFFFFFFu;
+        nat->ambient = amb | 0xFF000000u;
+        nat->colorMaterial = 3;
     } else {
         baseColor = defaultColor();
         vmask = hasColor ? 0xFFFFFFFFu : 0;
     }
-    const u32 constMask = drawConstColorOn ? 0x00FFFFFFu : 0;
-    const u32 constColor = drawConstColor & 0x00FFFFFFu;
-    const f32 ku = texType == 4 ? 1.0f : 1.0f / (f32) (1u << (f->tex[0].frac & 31));
-    const u8* posBase = arrayBase[A_POS]; const u32 posStride = arrayStride[A_POS];
-    const u8* nrmBase = arrayBase[A_NRM]; const u32 nrmStride = arrayStride[A_NRM];
-    const u8* clrBase = arrayBase[A_CLR0]; const u32 clrStride = arrayStride[A_CLR0];
-    const u8* texBase = arrayBase[A_TEX0]; const u32 texStride = arrayStride[A_TEX0];
-    u8 qbuf[4][40] __attribute__((aligned(4)));
-    u8* d = out;
+    if (drawConstColorOn) {  // the texture times a register: the register is the colour, the alpha stays
+        vmask &= 0xFF000000u;
+        baseColor = (baseColor & 0xFF000000u) | (drawConstColor & 0x00FFFFFFu);
+    }
+    F->vmask = vmask;
+    F->baseColor = baseColor & ~vmask;
+    F->colorOut = vmask != 0;
+    // one colour for the whole draw: the GE takes it from its material registers
+    nat->matAmbient = baseColor;
+    if (nat->colorMaterial == 3) nat->matDiffuse = baseColor;
+    // the GE vertex: texture f32 x 2, colour, normal (when lit), position; each aligned to its
+    // own size and the vertex to the largest
+    u32 o = 0, vtype = 0, align = 1;
+    if (F->hasTex) { vtype |= PG_VT_TEX_F32; o = 8; align = 4; }
+    if (F->colorOut) { F->clrOut = o; o += 4; vtype |= PG_VT_COLOR_8888; align = 4; }
+    if (lit) {
+        if (F->nrmType == 1) { F->nrmOut = o; o += 3; vtype |= PG_VT_NRM_S8; }
+        else if (F->nrmType == 3) { F->nrmOut = o; o += 6; vtype |= PG_VT_NRM_S16; if (align < 2) align = 2; }
+        else { F->nrmOut = o; o += 12; vtype |= PG_VT_NRM_F32; align = 4; }
+    }
+    if (F->posType == 1) { F->posOut = o; o += 3; vtype |= PG_VT_POS_S8; }
+    else if (F->posType == 3) { o = (o + 1) & ~1u; F->posOut = o; o += 6; vtype |= PG_VT_POS_S16; if (align < 2) align = 2; }
+    else { o = (o + 3) & ~3u; F->posOut = o; o += 12; vtype |= PG_VT_POS_F32; align = 4; }
+    F->stride = (o + align - 1) & ~(align - 1);
+    F->vtype = vtype;
+    return 0;
+}
+
+// One stream vertex into a GE vertex.
+static inline void gatherVertex(const NativeFmt* F, const u8* sp, u8* v)
+{
+    if (F->hasTex) {
+        const u8* p = attrPtr(sp + F->texOff, F->texMode, F->texBase, F->texStride);
+        const f32 ku = F->ku;
+        f32 tu, tv;
+        switch (F->texType) {
+        case 3: tu = (f32) (s16) ((p[0] << 8) | p[1]) * ku; tv = (f32) (s16) ((p[2] << 8) | p[3]) * ku; break;
+        case 4: tu = bef32(p); tv = bef32(p + 4); break;
+        case 2: tu = (f32) ((p[0] << 8) | p[1]) * ku; tv = (f32) ((p[2] << 8) | p[3]) * ku; break;
+        case 1: tu = (f32) (s8) p[0] * ku; tv = (f32) (s8) p[1] * ku; break;
+        default: tu = (f32) p[0] * ku; tv = (f32) p[1] * ku; break;
+        }
+        ((f32*) v)[0] = tu;
+        ((f32*) v)[1] = tv;
+    }
+    if (F->colorOut) {
+        const u8* p = attrPtr(sp + F->clrOff, F->clrMode, F->clrBase, F->clrStride);
+        int sz;
+        const u32 vc = F->clrType == 5 ? ((u32) p[0] | ((u32) p[1] << 8) | ((u32) p[2] << 16) | ((u32) p[3] << 24)) : readColor(p, F->clrType, 1, &sz);
+        *(u32*) (v + F->clrOut) = (vc & F->vmask) | F->baseColor;
+    }
+    if (F->lit) {
+        const u8* p = attrPtr(sp + F->nrmOff, F->nrmMode, F->nrmBase, F->nrmStride);
+        u8* q = v + F->nrmOut;
+        if (F->nrmType == 1) {
+            q[0] = p[0]; q[1] = p[1]; q[2] = p[2];
+        } else if (F->nrmType == 3) {
+            ((u16*) q)[0] = be16(p); ((u16*) q)[1] = be16(p + 2); ((u16*) q)[2] = be16(p + 4);
+        } else {
+            ((f32*) q)[0] = bef32(p); ((f32*) q)[1] = bef32(p + 4); ((f32*) q)[2] = bef32(p + 8);
+        }
+    }
+    {
+        const u8* p = attrPtr(sp + F->posOff, F->posMode, F->posBase, F->posStride);
+        u8* q = v + F->posOut;
+        if (F->posType == 1) {
+            q[0] = p[0]; q[1] = p[1]; q[2] = p[2];
+        } else if (F->posType == 3) {
+            ((u16*) q)[0] = be16(p); ((u16*) q)[1] = be16(p + 2); ((u16*) q)[2] = be16(p + 4);
+        } else {
+            ((f32*) q)[0] = bef32(p); ((f32*) q)[1] = bef32(p + 4); ((f32*) q)[2] = bef32(p + 8);
+        }
+    }
+}
+
+// The GE's side of a native draw: the model matrix, the texture mapping, the light signature.
+static void nativeFinish(const NativeFmt* F, PgNative* nat, const NativeLights* L)
+{
+    nat->vtype = F->vtype;
+    // the GE reads 16-bit positions as value / 32768 and 8-bit ones as value / 128; the game's are value / 2^frac
+    const int unit = F->posType == 3 ? 15 : F->posType == 1 ? 7 : -1, pf = F->posFrac;
+    const f32 k = unit < 0 ? 1.0f : pf <= unit ? (f32) (1u << (unit - pf)) : 1.0f / (f32) (1u << (pf - unit));
+    const f32* m = &mtxMem[currentMtx][0];
+    for (int r = 0; r < 3; r++) {
+        nat->model[r * 4 + 0] = m[r * 4 + 0] * k;
+        nat->model[r * 4 + 1] = m[r * 4 + 1] * k;
+        nat->model[r * 4 + 2] = m[r * 4 + 2] * k;
+        nat->model[r * 4 + 3] = m[r * 4 + 3];
+    }
+    nat->texMatrix = F->texMatrix;
+    nat->texScale[0] = boundSu; nat->texScale[1] = boundSv;
+    if (F->texMatrix) {
+        const TexGen* g = &texGen[0];
+        const f32* r0 = &mtxMem[g->mtx][0];
+        const f32* r1 = &mtxMem[g->mtx + 1][0];
+        nat->texMtx[0] = r0[0] * boundSu; nat->texMtx[1] = r0[1] * boundSu; nat->texMtx[2] = (r0[2] + r0[3]) * boundSu;
+        nat->texMtx[3] = r1[0] * boundSv; nat->texMtx[4] = r1[1] * boundSv; nat->texMtx[5] = (r1[2] + r1[3]) * boundSv;
+    }
+    nat->lit = F->lit;
+    nat->lightSig = (lightGen << 9) | (L->lightSel << 1) | (u32) (F->ch & 1);
+}
+
+static int matrixIsNumbers(void)
+{
+    const f32* m = &mtxMem[currentMtx][0];
+    for (int i = 0; i < 12; i++) {
+        if (!(m[i] == m[i])) return 0;
+    }
+    return 1;
+}
+
+// Draws `count` vertices of a disc display list the native way. Returns the stream position
+// after the vertices, or NULL when the CPU path has to take the draw.
+static const u8* drawNative(Parser* s, int prim, int vf, u32 count)
+{
+#define WHY(n) do { port_gx_stat_why[n] += count; return NULL; } while (0)
+    if (prim != 0 && prim != 2 && prim != 3 && prim != 4) WHY(0);  // quads, triangles, strips, fans
+    NativeFmt F;
+    int why = nativeFormat(vf, &F);
+    if (why) WHY(why - 1);
+    const u8* sp = s->p;
+    const u8* end = sp + count * F.streamBytes;
+    PgNative nat;
+    NativeLights L;
+    LightBounds bb;
+    if (F.lit) {  // (the extent of three of its vertices: the draws are small)
+        const u8* at[3] = {sp, sp + (count / 2) * F.streamBytes, sp + (count - 1) * F.streamBytes};
+        for (int k = 0; k < 3; k++) {
+            f32 q[3];
+            decodePos(&F, at[k], q);
+            for (int a = 0; a < 3; a++) {
+                if (k == 0 || q[a] < bb.lo[a]) bb.lo[a] = q[a];
+                if (k == 0 || q[a] > bb.hi[a]) bb.hi[a] = q[a];
+            }
+        }
+    }
+    why = nativeLights(&F, &nat, &bb, &L);
+    if (why) WHY(why - 1);
+    if (cullMode == 3) return end;  // GX_CULL_ALL
+    if (!matrixIsNumbers()) { port_gx_stat_dropped++; return end; }
+    applyDrawState(F.clrMode != 0);
+    why = nativeColors(&F, &nat, &L);
+    if (why) WHY(why - 1);
+#undef WHY
+    const u32 stride = F.stride;
+    const int quads = prim == 0;
+    const u32 outCount = quads ? count / 4 * 6 : count;
+    u8* out = (u8*) pg_get_memory((int) (outCount * stride));
+    if (!out) return end;
     const u32 tGather = usNow();
-    for (u32 n = 0; n < count; n++, sp += streamBytes) {
-        u8* v = quads ? qbuf[n & 3] : d;
-        if (hasTex) {
-            const u8* p = attrPtr(sp + texOff, texMode, texBase, texStride);
-            f32 tu, tv;
-            switch (texType) {
-            case 3: tu = (f32) (s16) ((p[0] << 8) | p[1]) * ku; tv = (f32) (s16) ((p[2] << 8) | p[3]) * ku; break;
-            case 4: tu = bef32(p); tv = bef32(p + 4); break;
-            case 2: tu = (f32) ((p[0] << 8) | p[1]) * ku; tv = (f32) ((p[2] << 8) | p[3]) * ku; break;
-            case 1: tu = (f32) (s8) p[0] * ku; tv = (f32) (s8) p[1] * ku; break;
-            default: tu = (f32) p[0] * ku; tv = (f32) p[1] * ku; break;
-            }
-            ((f32*) v)[0] = tu;
-            ((f32*) v)[1] = tv;
-        }
-        u32 col = baseColor;
-        if (vmask) {
-            const u8* p = attrPtr(sp + clrOff, clrMode, clrBase, clrStride);
-            int sz;
-            const u32 vc = clrType == 5 ? ((u32) p[0] | ((u32) p[1] << 8) | ((u32) p[2] << 16) | ((u32) p[3] << 24)) : readColor(p, clrType, 1, &sz);
-            col = (vc & vmask) | (baseColor & ~vmask);
-        }
-        *(u32*) (v + clrOut) = (col & ~constMask) | (constColor & constMask);
-        if (lit) {
-            const u8* p = attrPtr(sp + nrmOff, nrmMode, nrmBase, nrmStride);
-            if (nrmType == 1) {
-                v[nrmOut] = p[0]; v[nrmOut + 1] = p[1]; v[nrmOut + 2] = p[2];
-            } else if (nrmType == 3) {
-                u16* q = (u16*) (v + nrmOut);
-                q[0] = be16(p); q[1] = be16(p + 2); q[2] = be16(p + 4);
-            } else {
-                f32* q = (f32*) (v + nrmOut);
-                q[0] = bef32(p); q[1] = bef32(p + 4); q[2] = bef32(p + 8);
-            }
-        }
-        {
-            const u8* p = attrPtr(sp + posOff, posMode, posBase, posStride);
-            if (pos8) {
-                v[posOut] = p[0]; v[posOut + 1] = p[1]; v[posOut + 2] = p[2];
-            } else if (pos16) {
-                u16* q = (u16*) (v + posOut);
-                q[0] = be16(p); q[1] = be16(p + 2); q[2] = be16(p + 4);
-            } else {
-                f32* q = (f32*) (v + posOut);
-                q[0] = bef32(p); q[1] = bef32(p + 4); q[2] = bef32(p + 8);
-            }
-        }
-        if (!quads) {
-            d += stride;
-        } else if ((n & 3) == 3) {  // a quad: two triangles
+    if (!quads) {
+        u8* d = out;
+        for (u32 n = 0; n < count; n++, sp += F.streamBytes, d += stride) gatherVertex(&F, sp, d);
+    } else {
+        u8 qbuf[4][40] __attribute__((aligned(4)));
+        u8* d = out;
+        for (u32 n = 0; n + 3 < count; n += 4, sp += 4 * F.streamBytes) {  // a quad: two triangles
+            for (int k = 0; k < 4; k++) gatherVertex(&F, sp + k * F.streamBytes, qbuf[k]);
             memcpy(d, qbuf[0], stride); memcpy(d + stride, qbuf[1], stride); memcpy(d + 2 * stride, qbuf[2], stride);
             memcpy(d + 3 * stride, qbuf[0], stride); memcpy(d + 4 * stride, qbuf[2], stride); memcpy(d + 5 * stride, qbuf[3], stride);
             d += 6 * stride;
@@ -1465,33 +1574,459 @@ static const u8* drawNative(Parser* s, int prim, int vf, u32 count)
     }
     port_gx_us_gather += usNow() - tGather;
     port_gx_stat_native_draws++;
-    // the GE's side of it
-    nat.vtype = vtype;
-    // the GE reads 16-bit positions as value / 32768 and 8-bit ones as value / 128; the game's are value / 2^frac
-    const int unit = pos16 ? 15 : pos8 ? 7 : -1, pf = f->pos.frac & 31;
-    const f32 k = unit < 0 ? 1.0f : pf <= unit ? (f32) (1u << (unit - pf)) : 1.0f / (f32) (1u << (pf - unit));
-    for (int r = 0; r < 3; r++) {
-        nat.model[r * 4 + 0] = m[r * 4 + 0] * k;
-        nat.model[r * 4 + 1] = m[r * 4 + 1] * k;
-        nat.model[r * 4 + 2] = m[r * 4 + 2] * k;
-        nat.model[r * 4 + 3] = m[r * 4 + 3];
-    }
-    nat.texMatrix = texMatrix;
-    nat.texScale[0] = boundSu; nat.texScale[1] = boundSv;
-    if (texMatrix) {
-        const f32* r0 = &mtxMem[g->mtx][0];
-        const f32* r1 = &mtxMem[g->mtx + 1][0];
-        nat.texMtx[0] = r0[0] * boundSu; nat.texMtx[1] = r0[1] * boundSu; nat.texMtx[2] = (r0[2] + r0[3]) * boundSu;
-        nat.texMtx[3] = r1[0] * boundSv; nat.texMtx[4] = r1[1] * boundSv; nat.texMtx[5] = (r1[2] + r1[3]) * boundSv;
-    }
-    nat.lit = lit;
-    u32 lightSel = 0;  // (which of the game's lights: a draw may leave faint ones out)
-    for (int i = 0; i < nat.nLights; i++) lightSel |= 1u << lightIdx[i];
-    nat.lightSig = (lightGen << 9) | (lightSel << 1) | (u32) (ch & 1);
+    nativeFinish(&F, &nat, &L);
     static const int primTbl[5] = {PG_TRIANGLES, PG_TRIANGLES, PG_TRIANGLES, PG_TRIANGLE_STRIP, PG_TRIANGLE_FAN};
     port_gx_stat_native += count;
     pg_draw_native(primTbl[prim], (int) outCount, out, (int) (outCount * stride), &nat);
     return end;
+}
+
+// ---------------------------------------------------------------- baked display lists
+// A disc display list is a run of small strips over the same arrays, drawn every frame (and, for
+// the models a room repeats, several times a frame). Its vertices are gathered once, the strips
+// joined into one (two repeated vertices between them: triangles without area), and kept: a call
+// is then a matrix, the lights and a GE draw. A bake depends on the vertex format, the arrays
+// and the colour set-up (BakeKey); its source is watched through a few sample vertices, and a
+// list whose arrays the game rewrites (skinned models) is gathered every time instead, still
+// joined. A lit list is cut into segments of a few hundred vertices, each with its own extent,
+// so that each gets the four lights that matter where it is.
+#define BAKE_WAYS 4
+#define BAKE_BUCKETS 256
+#define BAKE_BUDGET (2200u << 10)
+#define BAKE_SAMPLES 8
+#define BAKE_SEGS 24
+#define BAKE_SEG_VERTS 256
+enum { BAKE_FREE = 0, BAKE_READY, BAKE_WALK, BAKE_DYNAMIC };
+struct BakeKey {
+    u8 vcd[A_COUNT];
+    u8 vf, lit, hasTex;
+    Vat vat;
+    const u8* base[4];
+    u32 stride[4];
+    u32 vmask, baseColor;
+};
+struct BakeSeg {
+    u32 stripOff, stripCount, triOff, triCount, streamVerts;  // offsets in vertices
+    LightBounds bb;
+};
+struct BakedList {
+    const u8* list;
+    u32 nbytes;
+    BakeKey key;
+    u8 state, fails, nSamples, nSeg;
+    u32 lastFrame, listSig;
+    u8* buf;                 // the segments' descriptions, then their vertices
+    u8* verts;
+    BakeSeg* seg;
+    u32 bytes, streamVerts;
+    const u8* sampleSrc[BAKE_SAMPLES];
+    u32 sampleDst[BAKE_SAMPLES];
+};
+static BakedList baked[BAKE_BUCKETS * BAKE_WAYS];
+extern "C" { volatile int port_gx_bake = 1; }  // a debugger poke: 0 walks every list draw by draw
+static u32 bakeBytes, bakeFrame = 2;
+extern "C" { unsigned int port_gx_stat_baked, port_gx_stat_bakes, port_gx_stat_transient, port_gx_stat_baked_calls, port_gx_stat_walk[6]; }
+extern "C" unsigned int port_gx_bake_bytes(void) { return bakeBytes; }
+
+struct ListScan {
+    u32 streamVerts, totalVerts, ops, nSeg;
+    BakeSeg seg[BAKE_SEGS];
+};
+
+static inline u32 stripJoin(u32 have) { return have ? 2 + (have & 1) : 0; }
+
+static u32 listSignature(const u8* list, u32 nbytes)
+{
+    u32 h = 2166136261u ^ nbytes;
+    const u32 step = (nbytes / 12) & ~3u;
+    for (u32 i = 0, o = 0; i < 12 && o + 4 <= nbytes; i++, o += step ? step : 4) {
+        u32 w;
+        memcpy(&w, list + o, 4);
+        h = (h ^ w) * 16777619u;
+    }
+    return h;
+}
+
+// The list's first draw: its vertex format index, or -1 when it does not start with one.
+static int listFirstVf(const u8* p, const u8* end)
+{
+    while (p < end && *p == 0x00) p++;
+    if (p >= end || *p < 0x80) return -1;
+    return *p & 7;
+}
+
+// Pass 1: is the list nothing but draws of one vertex format, and how many vertices do they make
+// per segment?
+static int scanList(const u8* p, const u8* end, int vf, const NativeFmt* F, ListScan* sc)
+{
+    const u32 streamBytes = F->streamBytes;
+    memset(sc, 0, sizeof(*sc));
+    const u8* const start = p;
+    BakeSeg* g = &sc->seg[0];
+    sc->nSeg = 1;
+    int any = 0;
+    while (p < end) {
+        const u8 op = *p++;
+        if (op == 0x00) continue;
+        if (op < 0x80 || (op & 7) != vf || p + 2 > end) {
+            static u32 nTr;
+            if (++nTr <= 30) port_trace("[gx] list %p not baked: op %02x at +%u of %u (vf %d, %u ops in, stream %u bytes per vertex)\n", start, op, (unsigned) (p - 1 - start), (unsigned) (end - start), vf, sc->ops, (unsigned) streamBytes);
+            return 0;
+        }
+        const int prim = (op >> 3) & 7;
+        const u32 count = be16(p);
+        p += 2;
+        if (p + count * streamBytes > end) {
+            static u32 nTr;
+            if (++nTr <= 30) port_trace("[gx] list not baked: draw op %02x of %u vertices at +%u runs past the end (%u bytes, %u per vertex, %u ops in)\n", op, (unsigned) count, (unsigned) (p - 3 - start), (unsigned) (end - start), (unsigned) streamBytes, sc->ops);
+            return 0;
+        }
+        if (prim == 3) {
+            if (count >= 3) g->stripCount += stripJoin(g->stripCount) + count;
+        } else if (prim == 0) {
+            for (u32 q = 0; q < count / 4; q++) g->stripCount += stripJoin(g->stripCount) + 4;
+        } else if (prim == 2) {
+            g->triCount += count / 3 * 3;
+        } else if (prim == 4) {
+            if (count >= 3) g->triCount += (count - 2) * 3;
+        } else {
+            static u32 nTr;
+            if (++nTr <= 30) port_trace("[gx] list not baked: primitive %d at +%u\n", prim, (unsigned) (p - 3 - start));
+            return 0;
+        }
+        if (count) sc->ops++;
+        if (F->lit) {  // the extent, for the lights
+            const u8* sp = p;
+            for (u32 n = 0; n < count; n++, sp += streamBytes) {
+                f32 q[3];
+                decodePos(F, sp, q);
+                for (int a = 0; a < 3; a++) {
+                    if (!any || q[a] < g->bb.lo[a]) g->bb.lo[a] = q[a];
+                    if (!any || q[a] > g->bb.hi[a]) g->bb.hi[a] = q[a];
+                }
+                any = 1;
+            }
+        }
+        g->streamVerts += count;
+        sc->streamVerts += count;
+        p += count * streamBytes;
+        if (F->lit && g->streamVerts >= BAKE_SEG_VERTS && sc->nSeg < BAKE_SEGS) {  // (the same cut in pass 2)
+            g = &sc->seg[sc->nSeg++];
+            any = 0;
+        }
+    }
+    if (sc->nSeg > 1 && g->streamVerts == 0) sc->nSeg--;
+    u32 off = 0;
+    for (u32 k = 0; k < sc->nSeg; k++) {
+        BakeSeg* s = &sc->seg[k];
+        if (s->stripCount > 65535 || s->triCount > 65535) return 0;
+        s->stripOff = off; off += s->stripCount;
+        s->triOff = off; off += s->triCount;
+    }
+    sc->totalVerts = off;
+    return 1;
+}
+
+// Pass 2: the vertices, strips (and quads) joined, triangles (and fans) after them, per segment.
+static void bakeGather(const u8* p, const u8* end, const NativeFmt* F, const ListScan* sc, u8* buf, BakedList* e)
+{
+    const u32 stride = F->stride, sb = F->streamBytes;
+    const BakeSeg* g = &sc->seg[0];
+    u32 gi = 0, gVerts = 0;
+    u8* strip = buf + g->stripOff * stride;
+    u8* tris = buf + g->triOff * stride;
+    u32 ns = 0, nt = 0, seen = 0, nextSample = 0;
+    int k = 0;
+#define SAMPLE(src, dst) do { if (e && k < BAKE_SAMPLES && seen >= nextSample) { e->sampleSrc[k] = (src); e->sampleDst[k] = (u32) ((dst) - buf); k++; nextSample = (u32) (((unsigned long long) k * sc->streamVerts) / BAKE_SAMPLES); } } while (0)
+#define JOIN() do { \
+        dup = NULL; \
+        if (ns) { \
+            const u8* lastV = strip + (ns - 1) * stride; \
+            memcpy(strip + ns * stride, lastV, stride); ns++; \
+            if (!(ns & 1)) { memcpy(strip + ns * stride, lastV, stride); ns++; } \
+            dup = strip + ns * stride; ns++; \
+        } \
+    } while (0)
+    while (p < end) {
+        const u8 op = *p++;
+        if (op == 0x00) continue;
+        const int prim = (op >> 3) & 7;
+        const u32 count = be16(p);
+        p += 2;
+        u8* dup;
+        if (prim == 3) {
+            if (count >= 3) {
+                JOIN();
+                u8* d = strip + ns * stride;
+                const u8* sp = p;
+                for (u32 n = 0; n < count; n++, sp += sb, d += stride, seen++) {
+                    gatherVertex(F, sp, d);
+                    SAMPLE(sp, d);
+                }
+                if (dup) memcpy(dup, strip + ns * stride, stride);
+                ns += count;
+            } else {
+                seen += count;
+            }
+        } else if (prim == 0) {
+            const u8* sp = p;
+            for (u32 q = 0; q < count / 4; q++, sp += 4 * sb, seen += 4) {  // a b c d -> the strip a b d c
+                JOIN();
+                u8* d = strip + ns * stride;
+                gatherVertex(F, sp, d);
+                SAMPLE(sp, d);
+                gatherVertex(F, sp + sb, d + stride);
+                gatherVertex(F, sp + 3 * sb, d + 2 * stride);
+                gatherVertex(F, sp + 2 * sb, d + 3 * stride);
+                if (dup) memcpy(dup, d, stride);
+                ns += 4;
+            }
+            seen += count & 3;
+        } else if (prim == 2) {
+            const u8* sp = p;
+            u8* d = tris + nt * stride;
+            const u32 n3 = count / 3 * 3;
+            for (u32 n = 0; n < n3; n++, sp += sb, d += stride, seen++) {
+                gatherVertex(F, sp, d);
+                SAMPLE(sp, d);
+            }
+            nt += n3;
+            seen += count - n3;
+        } else {  // a fan: (v0, vi, vi+1)
+            if (count >= 3) {
+                u8 v0[40] __attribute__((aligned(4)));
+                u8 prev[40] __attribute__((aligned(4)));
+                u8 cur[40] __attribute__((aligned(4)));
+                memset(v0, 0, sizeof(v0)); memset(prev, 0, sizeof(prev)); memset(cur, 0, sizeof(cur));
+                gatherVertex(F, p, v0);
+                gatherVertex(F, p + sb, prev);
+                u8* d = tris + nt * stride;
+                for (u32 n = 2; n < count; n++, d += 3 * stride) {
+                    gatherVertex(F, p + n * sb, cur);
+                    memcpy(d, v0, stride); memcpy(d + stride, prev, stride); memcpy(d + 2 * stride, cur, stride);
+                    memcpy(prev, cur, stride);
+                }
+                nt += (count - 2) * 3;
+            }
+            seen += count;
+        }
+        p += count * sb;
+        gVerts += count;
+        if (F->lit && gVerts >= BAKE_SEG_VERTS && gi + 1 < sc->nSeg) {
+            g = &sc->seg[++gi];
+            strip = buf + g->stripOff * stride;
+            tris = buf + g->triOff * stride;
+            ns = nt = gVerts = 0;
+        }
+    }
+#undef SAMPLE
+#undef JOIN
+    if (e) e->nSamples = (u8) k;
+}
+
+static void bakeRelease(BakedList* e)
+{
+    if (e->buf) { deferFree(e->buf); bakeBytes -= e->bytes; }
+    e->buf = NULL;
+    e->state = BAKE_FREE;
+}
+
+// Room for `bytes` more baked vertices: the lists not drawn for a frame or more go, oldest first.
+static int bakeRoom(u32 bytes)
+{
+    while (bakeBytes + bytes > BAKE_BUDGET) {
+        BakedList* old = NULL;
+        for (u32 i = 0; i < BAKE_BUCKETS * BAKE_WAYS; i++) {
+            BakedList* e = &baked[i];
+            if (e->state == BAKE_READY && e->lastFrame + 1 < bakeFrame && (!old || e->lastFrame < old->lastFrame)) old = e;
+        }
+        if (!old) return 0;
+        bakeRelease(old);
+    }
+    return 1;
+}
+
+// Draws a whole display list from its bake. Returns 0 when the list has to be walked draw by draw.
+static int callBaked(const u8* list, u32 nbytes)
+{
+    const u8* end = list + nbytes;
+    BakedList* ways = &baked[((((u32) (uintptr_t) list) >> 5) * 2654435761u >> 24) * BAKE_WAYS];
+    const u32 sig = listSignature(list, nbytes);
+    int vf = -1;
+    for (int w = 0; w < BAKE_WAYS; w++) {
+        BakedList* c = &ways[w];
+        if (c->state == BAKE_FREE || c->list != list || c->nbytes != nbytes) continue;
+        if (c->listSig != sig) { bakeRelease(c); continue; }  // other contents at that address: a room ago
+        if (c->state == BAKE_WALK) { c->lastFrame = bakeFrame; port_gx_stat_walk[0]++; return 0; }
+        vf = c->key.vf;
+        break;
+    }
+    if (vf < 0) vf = listFirstVf(list, end);
+    if (vf < 0) { port_gx_stat_walk[1]++; return 0; }
+    NativeFmt F;
+    if (nativeFormat(vf, &F)) { port_gx_stat_walk[2]++; return 0; }  // (the walk counts the reason)
+    if (cullMode == 3) return 1;         // GX_CULL_ALL
+    applyDrawState(F.clrMode != 0);
+    // the lights are not known yet (they need the list's extent): the colours first, without
+    // the ambient the left-out lights add
+    PgNative nat;
+    NativeLights L0 = {{0.0f, 0.0f, 0.0f}, 0};
+    if (nativeColors(&F, &nat, &L0)) { port_gx_stat_walk[3]++; return 0; }
+    BakeKey key;
+    memset(&key, 0, sizeof(key));
+    memcpy(key.vcd, vcd, A_COUNT);
+    key.vf = (u8) vf; key.lit = F.lit; key.hasTex = F.hasTex;
+    key.vat = vat[vf];
+    key.base[0] = F.posBase; key.base[1] = F.nrmBase; key.base[2] = F.clrBase; key.base[3] = F.texBase;
+    key.stride[0] = F.posStride; key.stride[1] = F.nrmStride; key.stride[2] = F.clrStride; key.stride[3] = F.texStride;
+    key.vmask = F.vmask; key.baseColor = F.colorOut ? F.baseColor : 0;  // (one colour for the draw: the vertices do not carry it)
+    BakedList* e = NULL;
+    int dynamic = 0;
+    for (int w = 0; w < BAKE_WAYS; w++) {
+        BakedList* c = &ways[w];
+        if (c->state == BAKE_FREE || c->list != list || c->nbytes != nbytes || c->listSig != sig) continue;
+        if (memcmp(&c->key, &key, sizeof(key)) == 0) { e = c; break; }
+        if (c->state == BAKE_DYNAMIC) dynamic = 1;  // (whatever the arrays: the game rewrites them)
+        if (memcmp(c->key.base, key.base, sizeof(key.base)) != 0 && c->lastFrame + 2 >= bakeFrame) {
+            // the same list over other arrays a frame ago: a model skinned into alternating
+            // buffers; not worth keeping
+            c->fails = 3;
+            c->state = BAKE_DYNAMIC;
+            if (c->buf) { deferFree(c->buf); bakeBytes -= c->bytes; c->buf = NULL; }
+            dynamic = 1;
+        }
+    }
+    BakedList* reuse = NULL;  // the way of a bake that went stale
+    u8 fails = 0;
+    // is the bake still what the list and its arrays say?
+    int ready = 0;
+    if (e && e->state == BAKE_READY) {
+        ready = 1;
+        u8 tmp[40] __attribute__((aligned(4)));
+        memset(tmp, 0, sizeof(tmp));
+        for (int k = 0; k < e->nSamples && ready; k++) {
+            gatherVertex(&F, e->sampleSrc[k], tmp);
+            if (memcmp(tmp, e->verts + e->sampleDst[k], F.stride) != 0) ready = 0;
+        }
+        if (!ready) {
+            fails = e->lastFrame + 2 >= bakeFrame ? (u8) (e->fails + 1) : 0;  // (changed while in use: the game animates it)
+            deferFree(e->buf);
+            bakeBytes -= e->bytes;
+            e->buf = NULL;
+            e->fails = fails;
+            if (fails >= 3) {
+                e->state = BAKE_DYNAMIC;
+            } else {
+                e->state = BAKE_FREE;
+                reuse = e;
+                e = NULL;
+            }
+        }
+    } else if (e && e->state == BAKE_DYNAMIC && e->lastFrame + 2 < bakeFrame) {
+        e->state = BAKE_FREE;  // not drawn for a while: another try
+        e = NULL;
+    }
+    if (dynamic && !e) {  // (the way of the entry marked dynamic over other arrays stands for this list)
+        for (int w = 0; w < BAKE_WAYS; w++) if (ways[w].state == BAKE_DYNAMIC && ways[w].list == list && ways[w].nbytes == nbytes) { e = &ways[w]; e->key = key; break; }
+    }
+    ListScan sc;
+    const BakeSeg* seg;
+    u32 nSeg;
+    if (ready) {
+        seg = e->seg; nSeg = e->nSeg;
+    } else {
+        if (!scanList(list, end, vf, &F, &sc)) {
+            // not a plain run of draws: remembered, and walked
+            BakedList* slot = NULL;
+            for (int w = 0; w < BAKE_WAYS && !slot; w++) if (ways[w].state == BAKE_FREE) slot = &ways[w];
+            if (slot) { slot->list = list; slot->nbytes = nbytes; slot->key = key; slot->listSig = sig; slot->buf = NULL; slot->bytes = 0; slot->state = BAKE_WALK; slot->lastFrame = bakeFrame; }
+            port_gx_stat_walk[4]++;
+            return 0;
+        }
+        if (sc.totalVerts == 0) return 1;
+        seg = sc.seg; nSeg = sc.nSeg;
+    }
+    // every segment's lights, before anything is drawn (a list the GE cannot light is walked whole)
+    NativeLights L;
+    for (u32 k = 0; k < nSeg; k++) {
+        if (nativeLights(&F, &nat, &seg[k].bb, &L)) {
+            port_gx_stat_walk[5]++;
+            return 0;
+        }
+    }
+    if (!matrixIsNumbers()) { port_gx_stat_dropped++; return 1; }
+    const u8* verts;
+    u32 flush = 0;
+    if (ready) {
+        verts = e->verts;
+        port_gx_stat_native += e->streamVerts;
+        port_gx_stat_baked += e->streamVerts;
+    } else {
+        const u32 header = (nSeg * sizeof(BakeSeg) + 15) & ~15u;
+        const u32 vbytes = sc.totalVerts * F.stride;
+        u8* buf = NULL;
+        if (!e) {  // a new bake: a free way, or the way longest out of use
+            BakedList* slot = reuse;
+            for (int w = 0; w < BAKE_WAYS && !reuse; w++) {
+                BakedList* c = &ways[w];
+                if (c->state == BAKE_FREE) { slot = c; break; }
+                if (c->lastFrame + 1 < bakeFrame && (!slot || c->lastFrame < slot->lastFrame)) slot = c;
+            }
+            if (slot && slot->state != BAKE_FREE) bakeRelease(slot);
+            if (slot && bakeRoom(header + vbytes)) buf = (u8*) malloc(header + vbytes);
+            if (buf) {
+                e = slot;
+                e->list = list; e->nbytes = nbytes; e->key = key; e->listSig = sig; e->fails = fails;
+                e->buf = buf; e->bytes = header + vbytes; e->streamVerts = sc.streamVerts;
+                e->seg = (BakeSeg*) buf;
+                memcpy(e->seg, sc.seg, nSeg * sizeof(BakeSeg));
+                e->nSeg = (u8) nSeg;
+                e->verts = buf + header;
+                seg = e->seg;
+                e->state = BAKE_READY;
+                bakeBytes += e->bytes;
+                port_gx_stat_bakes++;
+                if (port_profile) {
+                    static u32 nTr;
+                    if (++nTr <= 80) port_trace("[gx] bake %p %u bytes frame %u: vmask %08x base %08x lit %d tex %d ch %d, %u vertices of %u bytes in %u segments, %s, fails %d, %u KB baked\n", list, (unsigned) nbytes, bakeFrame,
+                                                (unsigned) F.vmask, (unsigned) F.baseColor, F.lit, F.hasTex, F.ch, sc.totalVerts, F.stride, nSeg, reuse ? "went stale" : "new", fails, bakeBytes / 1024);
+                }
+                buf += header;
+            }
+        }
+        const u32 tGather = usNow();
+        if (buf) {
+            memset(buf, 0, vbytes);
+            bakeGather(list, end, &F, &sc, buf, e);
+            pg_dcache_writeback(buf, vbytes);
+        } else {  // an animated list, or no room: gathered for this call alone
+            buf = (u8*) pg_get_memory((int) vbytes);
+            if (!buf) return 1;
+            bakeGather(list, end, &F, &sc, buf, NULL);
+            flush = vbytes;
+            port_gx_stat_transient += sc.streamVerts;
+        }
+        port_gx_us_gather += usNow() - tGather;
+        verts = buf;
+        port_gx_stat_native += sc.streamVerts;
+    }
+    if (e) e->lastFrame = bakeFrame;
+    port_gx_stat_baked_calls++;
+    if (flush) pg_dcache_writeback(verts, flush);
+    for (u32 k = 0; k < nSeg; k++) {
+        const BakeSeg* g = &seg[k];
+        nativeLights(&F, &nat, &g->bb, &L);
+        if (L.ambientExtra[0] + L.ambientExtra[1] + L.ambientExtra[2] > 0.0f) {
+            NativeFmt F2 = F;  // (the ambient with the left-out lights; the layout does not change)
+            nativeColors(&F2, &nat, &L);
+        } else if (k) {
+            nativeColors(&F, &nat, &L);  // (back to the ambient alone)
+        }
+        nativeFinish(&F, &nat, &L);
+        if (g->stripCount) { pg_draw_native(PG_TRIANGLE_STRIP, (int) g->stripCount, verts + g->stripOff * F.stride, 0, &nat); port_gx_stat_native_draws++; }
+        if (g->triCount) { pg_draw_native(PG_TRIANGLES, (int) g->triCount, verts + g->triOff * F.stride, 0, &nat); port_gx_stat_native_draws++; }
+    }
+    return 1;
 }
 
 static const u8* drawVerticesImpl(Parser* s, int prim, int vf, u32 count)
@@ -1729,20 +2264,6 @@ static const u8* drawVerticesImpl(Parser* s, int prim, int vf, u32 count)
         int pgPrim = primTbl[prim & 7];
         PgVertex* verts = out;
         u32 nv = o;
-        if (port_profile && projType == 0 && s->bigEndian) {  // experiment: how much of a frame is wholly outside one frustum plane
-            extern unsigned int port_gx_stat_offscreen, port_gx_stat_onscreen;
-            u32 outL = 0, outR = 0, outT = 0, outB = 0, outF = 0;
-            const f32 p00 = projection[0][0], p02 = projection[0][2], p11 = projection[1][1], p12 = projection[1][2], m22 = projection[2][2], m23 = projection[2][3];
-            for (u32 i = 0; i < nv; i++) {
-                const f32 w = -out[i].z, x = p00 * out[i].x + p02 * out[i].z, y = p11 * out[i].y + p12 * out[i].z;
-                if (x < -w) outL++;
-                if (x > w) outR++;
-                if (y < -w) outB++;
-                if (y > w) outT++;
-                if (m22 * out[i].z + m23 > 0.0f) outF++;
-            }
-            if (outL == nv || outR == nv || outT == nv || outB == nv || outF == nv) port_gx_stat_offscreen += nv; else port_gx_stat_onscreen += nv;
-        }
         {
             // GX clips against the z range of its clip space ([-1, 0] in the GameCube's
             // convention); the GE clamps the depth instead. A draw wholly beyond the near or the
@@ -1909,10 +2430,6 @@ void GXSetCopyClear(GXColor color, u32 z)
     copyClearZ = z;
 }
 
-static const void* dlSeen[4096];
-static const void* dlCaller[4096];
-static u32 dlFirst[4096];
-static u32 dlCalls, dlDistinct, dlBytes, dlDistinctBytes;
 void GXCopyDisp(void* dest, u8 clear)
 {
     if (!inited) GXInit_port();
@@ -1920,12 +2437,7 @@ void GXCopyDisp(void* dest, u8 clear)
     pg_finish();
     flushDeferredFree();  // the GE is done with the frame's textures
     immQuadIndex = 0;
-    if (port_profile) {
-        static u32 nf;
-        if ((++nf & 127) == 0) port_trace("[gx] display lists this frame: %u calls (%u KB), %u distinct (%u KB)\n", dlCalls, dlBytes / 1024, dlDistinct, dlDistinctBytes / 1024);
-        memset(dlSeen, 0, sizeof(dlSeen));
-        dlCalls = dlDistinct = dlBytes = dlDistinctBytes = 0;
-    }
+    bakeFrame++;
     pg_swap();
     drawOverlay();
     pg_start();
@@ -2108,25 +2620,19 @@ void GXCallDisplayList(void* list, u32 nbytes)
         if (++nb <= 20) port_trace("[gx] display list %p of %u bytes refused\n", list, (unsigned) nbytes);
         return;
     }
-    if (port_profile) {  // experiment: is a display list drawn more than once a frame?
-        u32 h = (((u32) (uintptr_t) list) >> 5) & 4095;
-        dlCalls++; dlBytes += nbytes;
-        while (dlSeen[h] && dlSeen[h] != list) h = (h + 1) & 4095;
-        if (!dlSeen[h]) { dlSeen[h] = list; dlDistinct++; dlDistinctBytes += nbytes; dlFirst[h] = dlCalls; dlCaller[h] = lastListCaller; }
-        else {
-            static u32 nTr;
-            if (nbytes > 4096 && ++nTr <= 24) {
-                int si = textureStage();
-                port_trace("[gx] list %p (%u bytes) again: call %u from %p, first was call %u from %p; blend %d %d %d cull %d tev stages %d tex stage %d colour mask %x alpha mask %x mtx %g %g %g\n", list, (unsigned) nbytes, dlCalls, lastListCaller, dlFirst[h], dlCaller[h],
-                           blendType, blendSrc, blendDst, cullMode, numTevStages, si, (unsigned) colorMaskBits, (unsigned) alphaMaskBits, mtxMem[currentMtx][3], mtxMem[currentMtx][7], mtxMem[currentMtx][11]);
-            }
-        }
-    }
     const u8* p = (const u8*) list;
     const u8* end = p + nbytes;
     if (nbytes >= 4 && memcmp(p, "1LDP", 4) == 0) {
         callRecorded(p + 4, end);
         return;
+    }
+    if (port_gx_native && port_gx_bake && !port_gx_flags && !pg_dump_pending()) {
+        const u32 t0 = usNow();
+        const int done = callBaked(p, nbytes);
+        const u32 dt = usNow() - t0;
+        port_gx_us_xform += dt;
+        port_gx_us_native += dt;
+        if (done) return;
     }
     Parser s = {p, 1};
     while (s.p < end) {

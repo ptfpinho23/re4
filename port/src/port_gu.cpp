@@ -91,6 +91,7 @@ void pg_init(void)
     sceGuDisable(GU_LIGHTING);
     sceGuTexFunc(GU_TFX_MODULATE, GU_TCC_RGBA);
     sceGuTexOffset(0.0f, 0.0f);
+    sceGuModelColor(0, 0xFFFFFF, 0xFFFFFF, 0);  // (emissive and specular stay black)
     sceGuClearColor(0xFF000000);
     sceGuClearDepth(65535);
     sceGuClear(GU_COLOR_BUFFER_BIT | GU_DEPTH_BUFFER_BIT);
@@ -115,6 +116,7 @@ void pg_start(void)
         extern unsigned int port_gx_stat_conversions, port_gx_stat_copies, port_gx_stat_dropped;
         port_trace("[ge] frame %u: %u ms/frame, %u draws, %u vertices, %u texture conversions per 128 frames, %u frame copies per frame, list up to %u KB; heap %u KB used %u KB free, textures %u KB, stack left %d KB\n", frames, (now - lastTime) / 1000 / 128, sumDraws / 128, sumVerts / 128,
                    port_gx_stat_conversions, port_gx_stat_copies / 128, maxListBytes / 1024, (unsigned) mi.uordblks / 1024, (unsigned) mi.fordblks / 1024, port_gx_texcache_bytes() / 1024, sceKernelCheckThreadStack() / 1024);
+        port_trace("[ge] memory: %u KB free in the system, largest block %u KB\n", (unsigned) sceKernelTotalFreeMemSize() / 1024, (unsigned) sceKernelMaxFreeMemSize() / 1024);
         {
             extern unsigned int port_gx_us_xform, port_gx_us_state, port_gx_stat_native, port_gx_stat_cpu, port_gx_stat_why[8];
             port_trace("[ge] time per frame: %u ms vertices, %u ms draw state, %u ms draw issue, %u ms GE wait; vertices per frame: %u native, %u cpu\n",
@@ -122,12 +124,21 @@ void pg_start(void)
             port_trace("[ge] cpu-path vertices per frame by reason: prim %u, matrix index %u, pos/colour format %u, normal %u, texgen %u, lighting model %u, spot angle %u, >4 lights %u\n",
                        port_gx_stat_why[0] / 128, port_gx_stat_why[1] / 128, port_gx_stat_why[2] / 128, port_gx_stat_why[3] / 128, port_gx_stat_why[4] / 128, port_gx_stat_why[5] / 128,
                        port_gx_stat_why[6] / 128, port_gx_stat_why[7] / 128);
+            extern unsigned int port_gx_stat_flat;
+            port_trace("[ge] native path: %u draws per frame with a fifth light folded into the ambient\n", port_gx_stat_flat / 128);
+            port_gx_stat_flat = 0;
+            extern unsigned int port_gx_stat_baked, port_gx_stat_bakes, port_gx_stat_transient, port_gx_stat_baked_calls;
+            extern unsigned int port_gx_bake_bytes(void);
+            port_trace("[ge] display lists: %u calls per frame drawn whole, %u vertices from bakes, %u gathered for the call; %u bakes per 128 frames, %u KB baked\n",
+                       port_gx_stat_baked_calls / 128, port_gx_stat_baked / 128, port_gx_stat_transient / 128, port_gx_stat_bakes, port_gx_bake_bytes() / 1024);
+            port_gx_stat_baked = port_gx_stat_bakes = port_gx_stat_transient = port_gx_stat_baked_calls = 0;
+            extern unsigned int port_gx_stat_walk[6];
+            port_trace("[ge] display lists walked per frame: %u remembered, %u no draw first, %u format, %u colours, %u not plain draws, %u lights\n",
+                       port_gx_stat_walk[0] / 128, port_gx_stat_walk[1] / 128, port_gx_stat_walk[2] / 128, port_gx_stat_walk[3] / 128, port_gx_stat_walk[4] / 128, port_gx_stat_walk[5] / 128);
+            for (int k = 0; k < 6; k++) port_gx_stat_walk[k] = 0;
             extern unsigned int port_gx_us_gather, port_gx_us_native, port_gx_stat_native_draws, port_gx_stat_cpu_draws;
             port_trace("[ge] native path: %u draws, %u ms in all, %u ms gathering; cpu path: %u draws per frame\n", port_gx_stat_native_draws / 128, port_gx_us_native / 1000 / 128, port_gx_us_gather / 1000 / 128, port_gx_stat_cpu_draws / 128);
             port_gx_us_gather = port_gx_us_native = port_gx_stat_native_draws = port_gx_stat_cpu_draws = 0;
-            extern unsigned int port_gx_stat_offscreen, port_gx_stat_onscreen;
-            if (port_gx_stat_offscreen | port_gx_stat_onscreen) port_trace("[ge] cpu path, perspective: %u vertices per frame in draws wholly off screen, %u in the others\n", port_gx_stat_offscreen / 128, port_gx_stat_onscreen / 128);
-            port_gx_stat_offscreen = port_gx_stat_onscreen = 0;
             for (int k = 0; k < 8; k++) port_gx_stat_why[k] = 0;
             port_gx_us_xform = port_gx_us_state = usDraw = usSync = port_gx_stat_native = port_gx_stat_cpu = 0;
         }
@@ -385,6 +396,8 @@ static int nativeActive;         // the GE's model matrix / lighting / texture m
 static int nativeLit, nativeTexMatrix;
 static float nativeModel[12];
 static unsigned int nativeLightSig, nativeAmbient;
+static int geColorMaterial = -1;
+static unsigned int geMatAmbient = 0x12345678u, geMatDiffuse = 0xFF000000u, geEmissive;  // (values no draw asks for: sent on first use)
 static void leaveNative(void)
 {
     ScePspFMatrix4 id;
@@ -455,8 +468,6 @@ void pg_draw_native(int prim, int count, const void* verts, int bytes, const PgN
             }
             sceGuAmbient(n->ambient);
             nativeAmbient = n->ambient;
-            sceGuColorMaterial(n->colorMaterial);
-            sceGuModelColor(0, n->material, n->material, 0);
             nativeLit = 1;
             nativeLightSig = n->lightSig;
         }
@@ -468,9 +479,19 @@ void pg_draw_native(int prim, int count, const void* verts, int bytes, const PgN
         sceGuDisable(GU_LIGHTING);
         nativeLit = 0;
     }
+    {
+        // the materials: the vertex colour where the game's channel takes it, else the registers
+        // (a vertex without a colour is drawn in the ambient material's, lit or not)
+        const int hasColor = (n->vtype & PG_VT_COLOR_8888) != 0;
+        const int cm = hasColor && n->lit ? n->colorMaterial : 0;
+        if (n->lit && cm != geColorMaterial) { sceGuColorMaterial(cm); geColorMaterial = cm; }
+        if (n->lit && (n->emissive & 0xFFFFFF) != geEmissive) { sceGuSendCommandi(84, (int) (n->emissive & 0xFFFFFF)); geEmissive = n->emissive & 0xFFFFFF; }  // (the emissive material colour)
+        if ((!hasColor || (n->lit && !(cm & 1))) && n->matAmbient != geMatAmbient) { sceGuMaterial(1, n->matAmbient); geMatAmbient = n->matAmbient; }
+        if (n->lit && !(cm & 2) && (n->matDiffuse & 0xFFFFFF) != geMatDiffuse) { sceGuMaterial(2, n->matDiffuse); geMatDiffuse = n->matDiffuse & 0xFFFFFF; }
+    }
     nativeActive = 1;
     if (dumpPath[0]) port_trace("[ge] native draw prim %d count %d vtype %x lit %d lights %d\n", prim, count, n->vtype, n->lit, n->nLights);
-    sceKernelDcacheWritebackRange(verts, bytes);
+    if (bytes) sceKernelDcacheWritebackRange(verts, bytes);
     sceGuDrawArray(prim, n->vtype | GU_TRANSFORM_3D, count, 0, verts);
     usDraw += usProfile() - t0;
 }
